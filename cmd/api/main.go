@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/SeladaKeju/ticket-booking/internal/config"
+	"github.com/SeladaKeju/ticket-booking/internal/database"
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +18,18 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// Connect to PostgreSQL
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	db, err := database.NewPostgres(ctx, cfg.DBUrl)
+	cancel()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	log.Println("Database connected successfully")
 
 	// Initialize gin router
 	r := gin.Default()
