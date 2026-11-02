@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/SeladaKeju/ticket-booking/internal/auth"
 	"github.com/SeladaKeju/ticket-booking/internal/config"
 	"github.com/SeladaKeju/ticket-booking/internal/database"
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,15 @@ func main() {
 			"status": "ok",
 		})
 	})
+
+	// Manual Dependency Injection
+	authRepo := auth.NewRepository(db)
+	authService := auth.NewService(authRepo)
+	authHandler := auth.NewHandler(authService)
+
+	// Register API routes
+	api := r.Group("/api/v1")
+	auth.RegisterRoutes(api, authHandler)
 
 	// Start HTTP server
 	addr := fmt.Sprintf(":%d", cfg.AppPort)
