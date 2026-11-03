@@ -10,13 +10,21 @@ import (
 
 var ErrInvalidEvent = errors.New("invalid event data")
 
+type eventRepository interface {
+	Create(context.Context, string, string, string, time.Time) (*Event, error)
+	GetByID(context.Context, int64) (*Event, error)
+	List(context.Context, int, int) ([]Event, error)
+	Update(context.Context, int64, UpdateEventInput) (*Event, error)
+	Publish(context.Context, int64) (*Event, error)
+}
+
 // Service handles event business logic.
 type Service struct {
-	repo *Repository
+	repo eventRepository
 }
 
 // NewService creates a service with the event repository.
-func NewService(repo *Repository) *Service {
+func NewService(repo eventRepository) *Service {
 	return &Service{repo: repo}
 }
 
