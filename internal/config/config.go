@@ -8,12 +8,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+// Config holds application settings.
 type Config struct {
 	AppPort   int
 	DBUrl     string
 	JWTSecret string
 }
 
+// Load reads and validates environment settings.
 func Load() (*Config, error) {
 	// load .env if avail
 	_ = godotenv.Load()
@@ -51,7 +53,7 @@ func Load() (*Config, error) {
 	// Initialize configuration
 	cfg := &Config{
 		AppPort:   appPort,
-		DBUrl: databaseURL,
+		DBUrl:     databaseURL,
 		JWTSecret: jwtSecret,
 	}
 

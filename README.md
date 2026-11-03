@@ -66,7 +66,7 @@ Response:
 ```
 
 Use your configured port if you change `APP_PORT`.
-Authentication is not implemented yet.
+Authentication supports registration, login, profiles, and an admin access check.
 
 ## Project Structure
 

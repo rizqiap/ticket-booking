@@ -42,14 +42,15 @@ func main() {
 		})
 	})
 
-	// Manual Dependency Injection
+	// Wire auth dependencies.
 	authRepo := auth.NewRepository(db)
-	authService := auth.NewService(authRepo)
+	authService := auth.NewService(authRepo, cfg.JWTSecret)
 	authHandler := auth.NewHandler(authService)
+	authRequired := auth.AuthMiddleware(cfg.JWTSecret)
 
 	// Register API routes
 	api := r.Group("/api/v1")
-	auth.RegisterRoutes(api, authHandler)
+	auth.RegisterRoutes(api, authHandler, authRequired)
 
 	// Start HTTP server
 	addr := fmt.Sprintf(":%d", cfg.AppPort)
