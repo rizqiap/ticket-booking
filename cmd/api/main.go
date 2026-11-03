@@ -10,6 +10,7 @@ import (
 	"github.com/SeladaKeju/ticket-booking/internal/auth"
 	"github.com/SeladaKeju/ticket-booking/internal/config"
 	"github.com/SeladaKeju/ticket-booking/internal/database"
+	"github.com/SeladaKeju/ticket-booking/internal/event"
 	"github.com/gin-gonic/gin"
 )
 
@@ -48,9 +49,22 @@ func main() {
 	authHandler := auth.NewHandler(authService)
 	authRequired := auth.AuthMiddleware(cfg.JWTSecret)
 
+	// Event dependency injection
+	eventRepo := event.NewRepository(db)
+	eventService := event.NewService(eventRepo)
+	eventHandler := event.NewHandler(eventService)
+
 	// Register API routes
 	api := r.Group("/api/v1")
 	auth.RegisterRoutes(api, authHandler, authRequired)
+
+	// Event routes
+	event.RegisterRoutes(
+		api,
+		eventHandler,
+		authRequired,
+		auth.RequireRole("admin"),
+	)
 
 	// Start HTTP server
 	addr := fmt.Sprintf(":%d", cfg.AppPort)
