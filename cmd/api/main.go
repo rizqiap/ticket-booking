@@ -12,6 +12,7 @@ import (
 	"github.com/SeladaKeju/ticket-booking/internal/config"
 	"github.com/SeladaKeju/ticket-booking/internal/database"
 	"github.com/SeladaKeju/ticket-booking/internal/event"
+	"github.com/SeladaKeju/ticket-booking/internal/tickettype"
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,6 +59,11 @@ func main() {
 	eventService := event.NewService(eventRepo)
 	eventHandler := event.NewHandler(eventService)
 
+	// Ticket Type Dependency Injection
+	ticketTypeRepo := tickettype.NewRepository(db)
+	ticketTypeService := tickettype.NewService(ticketTypeRepo)
+	ticketTypeHandler := tickettype.NewHandler(ticketTypeService)
+
 	// Register API routes
 	api := r.Group("/api/v1")
 	auth.RegisterRoutes(api, authHandler, authRequired)
@@ -66,6 +72,14 @@ func main() {
 	event.RegisterRoutes(
 		api,
 		eventHandler,
+		authRequired,
+		auth.RequireRole("admin"),
+	)
+
+	// Register routes
+	tickettype.RegisterRoutes(
+		api,
+		ticketTypeHandler,
 		authRequired,
 		auth.RequireRole("admin"),
 	)
