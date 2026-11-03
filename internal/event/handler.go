@@ -145,3 +145,104 @@ func (h *Handler) List(c *gin.Context) {
 		},
 	})
 }
+
+// Update handles partial event updates for admins.
+func (h *Handler) Update(c *gin.Context) {
+	// 1. Parse event ID
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	// 2. Read JSON request
+	var input UpdateEventInput
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request data",
+		})
+		return
+	}
+
+	// 3. Call service
+	event, err := h.service.Update(
+		c.Request.Context(),
+		id,
+		input,
+	)
+
+	// 4. Handle errors
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidEvent):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid event data",
+			})
+
+		case errors.Is(err, ErrEventNotFound):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
+			})
+
+		default:
+			log.Printf("update event failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "internal server error",
+			})
+		}
+		return
+	}
+
+	// 5. Send HTTP response
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event updated successfully",
+		"data":    event,
+	})
+}
+
+// Publish handles publishing draft events for admins.
+func (h *Handler) Publish(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid event id",
+		})
+		return
+	}
+
+	event, err := h.service.Publish(
+		c.Request.Context(),
+		id,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrEventNotFound):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "event not found",
+			})
+
+		case errors.Is(err, ErrEventCannotPublish):
+			c.JSON(http.StatusConflict, gin.H{
+				"error": "event cannot be published",
+			})
+
+		default:
+			log.Printf("publish event failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "internal server error",
+			})
+		}
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "event published successfully",
+		"data":    event,
+	})
+}

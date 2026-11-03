@@ -68,6 +68,21 @@ Response:
 Use your configured port if you change `APP_PORT`.
 Authentication supports registration, login, profiles, and an admin access check.
 
+## Swagger
+
+Run `go run ./cmd/api`, then open <http://localhost:8080/swagger/index.html>.
+Use your configured `APP_PORT` if different. Swagger UI loads its assets from a CDN,
+so the browser needs internet access.
+
+The contract is maintained in [docs/openapi.yaml](docs/openapi.yaml) and embedded
+in the Go binary. Restart the API after changing it. All endpoints from
+[the requirements](docs/REQUIREMENT.MD) are listed; those marked `[RENCANA]` are not
+implemented and have no agreed request/response body yet. Active endpoints follow
+the current handlers. `/auth/admin-check` is also documented.
+
+To call a protected endpoint, login through Swagger, copy `data.access_token`,
+click **Authorize**, and paste the token without the `Bearer` prefix.
+
 ## Project Structure
 
 ```text

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/SeladaKeju/ticket-booking/docs"
 	"github.com/SeladaKeju/ticket-booking/internal/auth"
 	"github.com/SeladaKeju/ticket-booking/internal/config"
 	"github.com/SeladaKeju/ticket-booking/internal/database"
@@ -35,6 +36,9 @@ func main() {
 
 	// Initialize gin router
 	r := gin.Default()
+
+	// Swagger UI and OpenAPI contract.
+	docs.RegisterRoutes(r)
 
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {

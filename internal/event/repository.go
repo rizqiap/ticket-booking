@@ -10,7 +10,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var ErrEventNotFound = errors.New("event not found")
+var (
+	ErrEventNotFound      = errors.New("event not found")
+	ErrEventCannotPublish = errors.New("event cannot be published")
+)
 
 // Repository handles event database queries.
 type Repository struct {
@@ -148,4 +151,111 @@ func (r *Repository) List(
 	}
 
 	return events, nil
+}
+
+// Update saves provided fields and keeps omitted values unchanged.
+func (r *Repository) Update(
+	ctx context.Context,
+	id int64,
+	input UpdateEventInput,
+) (*Event, error) {
+	var event Event
+
+	err := r.db.QueryRow(ctx, `
+		UPDATE events
+		SET
+			title = COALESCE($2::varchar, title),
+            description = COALESCE($3::text, description),
+            location = COALESCE($4::varchar, location),
+            starts_at = COALESCE($5::timestamptz, starts_at),
+            updated_at = NOW()
+		WHERE id = $1
+		RETURNING
+			id, title, COALESCE(description, ''),
+            location, starts_at, status,
+            created_at, updated_at
+	`,
+		id,
+		input.Title,
+		input.Description,
+		input.Location,
+		input.StartsAt,
+	).Scan(
+		&event.ID,
+		&event.Title,
+		&event.Description,
+		&event.Location,
+		&event.StartsAt,
+		&event.Status,
+		&event.CreatedAt,
+		&event.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrEventNotFound
+		}
+
+		return nil, fmt.Errorf("update event: %w", err)
+	}
+
+	return &event, nil
+}
+
+// Publish only updates draft events whose start time is still in the future.
+func (r *Repository) Publish(
+	ctx context.Context,
+	id int64,
+) (*Event, error) {
+	var event Event
+
+	err := r.db.QueryRow(ctx, `
+        UPDATE events
+        SET
+            status = 'published',
+            updated_at = NOW()
+        WHERE id = $1
+          AND status = 'draft'
+          AND starts_at > NOW()
+        RETURNING
+            id, title, COALESCE(description, ''),
+            location, starts_at, status,
+            created_at, updated_at
+    `, id).Scan(
+		&event.ID,
+		&event.Title,
+		&event.Description,
+		&event.Location,
+		&event.StartsAt,
+		&event.Status,
+		&event.CreatedAt,
+		&event.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		// Find out whether event exists
+		var exists bool
+
+		checkErr := r.db.QueryRow(ctx, `
+            SELECT EXISTS (
+                SELECT 1 FROM events WHERE id = $1
+            )
+        `, id).Scan(&exists)
+
+		if checkErr != nil {
+			return nil, fmt.Errorf("check event: %w", checkErr)
+		}
+
+		if !exists {
+			return nil, ErrEventNotFound
+		}
+
+		return nil, ErrEventCannotPublish
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("publish event: %w", err)
+	}
+
+	return &event, nil
 }

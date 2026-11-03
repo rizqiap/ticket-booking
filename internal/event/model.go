@@ -21,3 +21,11 @@ type Event struct {
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
 }
+
+// UpdateEventInput holds optional fields; nil leaves the current value unchanged.
+type UpdateEventInput struct {
+	Title       *string    `json:"title"`
+	Description *string    `json:"description"`
+	Location    *string    `json:"location"`
+	StartsAt    *time.Time `json:"starts_at"`
+}

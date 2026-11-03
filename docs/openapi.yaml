@@ -1,0 +1,652 @@
+openapi: 3.0.3
+info:
+  title: Ticket Booking API
+  version: 0.1.0
+  description: |
+    Dokumentasi berdasarkan API Contract di docs/REQUIREMENT.MD.
+    Endpoint AKTIF mengikuti route, validasi, dan response kode saat ini.
+    Endpoint RENCANA belum tersedia; requirement baru menetapkan method dan path.
+    Body, otorisasi, status HTTP, dan response endpoint RENCANA belum ditetapkan.
+    Endpoint admin-check dan publish event merupakan tambahan dari implementasi.
+
+    Untuk endpoint bertanda kunci: login, salin data.access_token, lalu klik
+    Authorize dan masukkan token tanpa awalan Bearer. Token berlaku satu jam.
+    Role admin dibaca dari JWT; login ulang setelah mengubah role di database.
+servers:
+  - url: /api/v1
+    description: API pada host dan port yang sama dengan Swagger UI
+tags:
+  - name: Authentication
+  - name: Event Management
+  - name: Ticket Management
+  - name: Ticket Booking
+  - name: Payment Simulation
+  - name: E-Ticket
+
+paths:
+  /auth/register:
+    post:
+      tags: [Authentication]
+      operationId: register
+      summary: Daftar akun customer
+      x-implementation-status: implemented
+      description: 'AKTIF. Semua field wajib. Role ditentukan server sebagai customer; password disimpan sebagai hash bcrypt.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterInput'
+      responses:
+        '201':
+          description: Akun berhasil dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                    example: user registered successfully
+                  data:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email sudah terdaftar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: email already registered}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      operationId: login
+      summary: Login dan buat access token
+      x-implementation-status: implemented
+      description: 'AKTIF. Email tidak ditemukan dan password salah mengembalikan pesan 401 yang sama.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+      responses:
+        '200':
+          description: Login berhasil; expires_in menggunakan satuan detik
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [access_token, token_type, expires_in]
+                    properties:
+                      access_token:
+                        type: string
+                        description: JWT HS256; salin nilainya ke tombol Authorize.
+                        example: <token-hasil-login>
+                      token_type:
+                        type: string
+                        enum: [Bearer]
+                      expires_in:
+                        type: integer
+                        example: 3600
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Email tidak ditemukan atau password salah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid email or password}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/me:
+    get:
+      tags: [Authentication]
+      operationId: getProfile
+      summary: Profil pengguna yang login
+      x-implementation-status: implemented
+      description: 'AKTIF. Tanpa body. ID diambil dari JWT; profil terbaru dibaca dari database.'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profil pengguna
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/admin-check:
+    get:
+      tags: [Authentication]
+      operationId: checkAdmin
+      summary: Cek akses admin
+      x-implementation-status: implemented
+      description: 'AKTIF. Tanpa body. Memerlukan role admin pada JWT.'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Akses admin diizinkan
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                    example: admin access granted
+                  data:
+                    type: object
+                    nullable: true
+                    example: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /events:
+    get:
+      tags: [Event Management]
+      operationId: listEvents
+      summary: Daftar event published
+      x-implementation-status: implemented
+      description: 'AKTIF. Publik. Diurutkan berdasarkan starts_at lalu id, secara ascending. Data kosong berupa [].'
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100000, default: 1}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
+      responses:
+        '200':
+          description: Satu halaman event published
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+                  pagination:
+                    type: object
+                    required: [page, limit]
+                    properties:
+                      page: {type: integer, example: 1}
+                      limit: {type: integer, example: 10}
+        '400':
+          description: Parameter pagination tidak valid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid pagination parameters}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags: [Event Management]
+      operationId: createEvent
+      summary: Buat event draft (admin)
+      x-implementation-status: implemented
+      description: 'AKTIF. Memerlukan role admin. starts_at wajib di masa depan. Event baru berstatus draft dan belum muncul pada endpoint publik.'
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEventInput'
+      responses:
+        '201':
+          description: Event draft berhasil dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                    example: event created successfully
+                  data:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /events/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Event Management]
+      operationId: getEvent
+      summary: Detail event published
+      x-implementation-status: implemented
+      description: 'AKTIF. Publik. Event draft atau ID yang tidak ada mengembalikan 404.'
+      responses:
+        '200':
+          description: Detail event
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          description: ID bukan bilangan bulat positif
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid event id}
+        '404':
+          description: Event tidak ditemukan atau belum published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: event not found}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags: [Event Management]
+      operationId: updateEvent
+      summary: Ubah event (admin)
+      x-implementation-status: implemented
+      description: 'AKTIF. Kirim minimal satu field non-null. Field yang tidak dikirim atau bernilai null tidak diubah. starts_at baru wajib di masa depan.'
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateEventInput'
+      responses:
+        '200':
+          description: Event berhasil diubah
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventActionResponse'
+              example:
+                message: event updated successfully
+                data:
+                  id: 1
+                  title: Konser Musik 2027
+                  description: Konser musik akhir pekan.
+                  location: Bandung
+                  starts_at: '2027-12-20T19:00:00+07:00'
+                  status: draft
+                  created_at: '2026-11-03T10:00:00+07:00'
+                  updated_at: '2026-11-03T11:00:00+07:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /events/{id}/publish:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    patch:
+      tags: [Event Management]
+      operationId: publishEvent
+      summary: Publish event draft (admin)
+      x-implementation-status: implemented
+      description: 'AKTIF. Tanpa body. Hanya event draft dengan starts_at di masa depan yang dapat dipublish.'
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Event berhasil dipublish; message bernilai event published successfully dan data.status bernilai published.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventActionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '409':
+          description: Event bukan draft atau starts_at sudah lewat.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: event cannot be published}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /events/{id}/ticket-types:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Ticket Management]
+      operationId: listTicketTypes
+      summary: '[RENCANA] Daftar jenis tiket event'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke event; detail kontrak belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+    post:
+      tags: [Ticket Management]
+      operationId: createTicketType
+      summary: '[RENCANA] Tambah jenis tiket event'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke event; body dan otorisasi belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /ticket-types/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    patch:
+      tags: [Ticket Management]
+      operationId: updateTicketType
+      summary: '[RENCANA] Ubah jenis tiket'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke jenis tiket; body dan otorisasi belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /bookings:
+    post:
+      tags: [Ticket Booking]
+      operationId: createBooking
+      summary: '[RENCANA] Pesan tiket'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Body, penempatan idempotency key, otorisasi, dan response belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+    get:
+      tags: [Ticket Booking]
+      operationId: listBookings
+      summary: '[RENCANA] Riwayat pemesanan'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Filter, pagination, otorisasi, dan response belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /bookings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Ticket Booking]
+      operationId: getBooking
+      summary: '[RENCANA] Detail pemesanan'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke pemesanan; detail kontrak belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /bookings/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      tags: [Ticket Booking]
+      operationId: cancelBooking
+      summary: '[RENCANA] Batalkan pemesanan'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Body, otorisasi, response, dan pemetaan status pembatalan belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /bookings/{id}/payments:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    post:
+      tags: [Payment Simulation]
+      operationId: createPayment
+      summary: '[RENCANA] Simulasikan pembayaran'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke pemesanan; body dan otorisasi belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+    get:
+      tags: [Payment Simulation]
+      operationId: listPayments
+      summary: '[RENCANA] Daftar pembayaran pemesanan'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke pemesanan; detail kontrak belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+  /bookings/{id}/tickets:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [E-Ticket]
+      operationId: listTickets
+      summary: '[RENCANA] Daftar e-ticket pemesanan'
+      x-implementation-status: planned
+      description: Belum diimplementasikan. Parameter id merujuk ke pemesanan; detail kontrak belum ditetapkan.
+      responses:
+        default:
+          $ref: '#/components/responses/Planned'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Masukkan data.access_token dari login, tanpa awalan Bearer.
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      description: ID resource pada URL.
+      schema: {type: integer, format: int64, minimum: 1}
+      example: 1
+  schemas:
+    RegisterInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Tidak boleh hanya spasi.
+          example: Rizqi
+        email:
+          type: string
+          format: email
+          example: rizqi@example.com
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 8
+          description: Maksimal 72 byte, sesuai batas bcrypt.
+          example: password123
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: rizqi@example.com
+        password:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 1
+          example: password123
+    User:
+      type: object
+      required: [id, name, email, role]
+      properties:
+        id: {type: integer, format: int64, example: 1}
+        name: {type: string, example: Rizqi}
+        email: {type: string, format: email, example: rizqi@example.com}
+        role: {type: string, enum: [customer, admin], example: customer}
+    CreateEventInput:
+      type: object
+      required: [title, location, starts_at]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Tidak boleh hanya spasi.
+          example: Konser Musik 2027
+        description:
+          type: string
+          example: Konser musik akhir pekan.
+        location:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Tidak boleh hanya spasi.
+          example: Jakarta
+        starts_at:
+          type: string
+          format: date-time
+          description: Waktu RFC 3339 di masa depan; sertakan zona waktu.
+          example: '2027-12-20T19:00:00+07:00'
+    UpdateEventInput:
+      type: object
+      minProperties: 1
+      description: Minimal satu field non-null. Status diubah melalui endpoint publish.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Tidak boleh hanya spasi.
+        description:
+          type: string
+        location:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Tidak boleh hanya spasi.
+        starts_at:
+          type: string
+          format: date-time
+          description: Waktu RFC 3339 di masa depan.
+      example: {location: Bandung}
+    EventActionResponse:
+      type: object
+      required: [message, data]
+      properties:
+        message:
+          type: string
+          example: event published successfully
+        data:
+          $ref: '#/components/schemas/Event'
+    Event:
+      type: object
+      required: [id, title, description, location, starts_at, status, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64, example: 1}
+        title: {type: string, example: Konser Musik 2027}
+        description: {type: string, example: Konser musik akhir pekan.}
+        location: {type: string, example: Jakarta}
+        starts_at: {type: string, format: date-time, example: '2027-12-20T19:00:00+07:00'}
+        status:
+          type: string
+          enum: [draft, published]
+          description: Event baru draft; endpoint publik hanya menampilkan published.
+          example: draft
+        created_at: {type: string, format: date-time, example: '2026-11-03T10:00:00+07:00'}
+        updated_at: {type: string, format: date-time, example: '2026-11-03T10:00:00+07:00'}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: invalid request data
+  responses:
+    BadRequest:
+      description: JSON atau input tidak valid; pesan dapat menjelaskan kesalahan validasi service.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: invalid request data}
+    Unauthorized:
+      description: Token hilang/tidak valid/kedaluwarsa, subject tidak valid, atau akun tidak ada.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: unauthorized}
+    Forbidden:
+      description: Token valid tetapi role bukan admin.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: forbidden}
+    InternalServerError:
+      description: Kegagalan internal; detail dicatat di log server.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: internal server error}
+    EventNotFound:
+      description: Event tidak ditemukan.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {error: event not found}
+    Planned:
+      description: Endpoint belum tersedia. Ini penanda dokumentasi, bukan status atau body response server. Detail kontrak belum ditetapkan.

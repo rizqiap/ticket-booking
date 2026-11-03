@@ -15,11 +15,11 @@ func RegisterRoutes(
 	events.GET("", h.List)
 	events.GET("/:id", h.GetByID)
 
-	// Creating events requires a valid admin token.
-	events.POST(
-		"",
-		authRequired,
-		adminOnly,
-		h.Create,
-	)
+	// Admin routes
+	admin := events.Group("")
+	admin.Use(authRequired, adminOnly)
+
+	admin.POST("", h.Create)
+	admin.PATCH("/:id", h.Update)
+	admin.PATCH("/:id/publish", h.Publish)
 }
