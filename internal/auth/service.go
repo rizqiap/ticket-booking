@@ -18,9 +18,15 @@ var (
 	ErrInvalidCredentials = errors.New("invalid email or password")
 )
 
+type userRepository interface {
+	Create(context.Context, string, string, string) (*User, error)
+	FindByEmail(context.Context, string) (*UserCredentials, error)
+	FindByID(context.Context, int64) (*User, error)
+}
+
 // Service handles auth business logic.
 type Service struct {
-	repo      *Repository
+	repo      userRepository
 	jwtSecret []byte
 }
 
@@ -31,7 +37,7 @@ type AccessClaims struct {
 }
 
 // NewService creates a service with the user repository.
-func NewService(repo *Repository, jwtSecret string) *Service {
+func NewService(repo userRepository, jwtSecret string) *Service {
 	return &Service{
 		repo:      repo,
 		jwtSecret: []byte(jwtSecret),
