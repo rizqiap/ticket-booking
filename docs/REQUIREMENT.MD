@@ -124,6 +124,7 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - `GET /events/{id}`
 - `POST /events`
 - `PATCH /events/{id}`
+- `PATCH /events/{id}/publish` — admin mempublikasikan event draft yang belum dimulai.
 
 ### 3. Ticket Management
 - `GET /events/{id}/ticket-types`

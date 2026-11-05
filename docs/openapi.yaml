@@ -7,7 +7,7 @@ info:
     Endpoint AKTIF mengikuti route, validasi, dan response kode saat ini.
     Endpoint RENCANA belum tersedia; requirement baru menetapkan method dan path.
     Body, otorisasi, status HTTP, dan response endpoint RENCANA belum ditetapkan.
-    Endpoint admin-check dan publish event merupakan tambahan dari implementasi.
+    Endpoint publish event merupakan tambahan dari implementasi dan sudah dicatat di requirement.
 
     Untuk endpoint bertanda kunci: login, salin data.access_token, lalu klik
     Authorize dan masukkan token tanpa awalan Bearer. Token berlaku satu jam.
@@ -135,36 +135,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '500':
           $ref: '#/components/responses/InternalServerError'
-
-  /auth/admin-check:
-    get:
-      tags: [Authentication]
-      operationId: checkAdmin
-      summary: Cek akses admin
-      x-implementation-status: implemented
-      description: 'AKTIF. Tanpa body. Memerlukan role admin pada JWT.'
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Akses admin diizinkan
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [message, data]
-                properties:
-                  message:
-                    type: string
-                    example: admin access granted
-                  data:
-                    type: object
-                    nullable: true
-                    example: null
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
 
   /events:
     get:
@@ -366,21 +336,73 @@ paths:
     get:
       tags: [Ticket Management]
       operationId: listTicketTypes
-      summary: '[RENCANA] Daftar jenis tiket event'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Parameter id merujuk ke event; detail kontrak belum ditetapkan.
+      summary: Daftar jenis tiket event
+      x-implementation-status: implemented
+      description: 'AKTIF. Endpoint publik untuk event published. Parameter id adalah ID event. Semua jenis tiket dikembalikan berurutan berdasarkan ID, termasuk stok habis. Event tanpa jenis tiket menghasilkan data array kosong. Event tidak ditemukan atau masih draft menghasilkan 404.'
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '200':
+          description: Daftar jenis tiket event, tanpa pagination.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TicketType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     post:
       tags: [Ticket Management]
       operationId: createTicketType
-      summary: '[RENCANA] Tambah jenis tiket event'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Parameter id merujuk ke event; body dan otorisasi belum ditetapkan.
+      summary: Tambah jenis tiket event (admin)
+      x-implementation-status: implemented
+      description: 'AKTIF. Parameter id adalah ID event, termasuk event draft. Nama dirapikan dan harus unik dalam event yang sama. available_stock awal sama dengan total_stock.'
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTicketTypeInput'
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '201':
+          description: Jenis tiket berhasil dibuat.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message:
+                    type: string
+                    example: ticket type created successfully
+                  data:
+                    $ref: '#/components/schemas/TicketType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/EventNotFound'
+        '409':
+          description: Nama jenis tiket sudah digunakan pada event yang sama.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: ticket type already exists}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /ticket-types/{id}:
     parameters:
@@ -388,12 +410,50 @@ paths:
     patch:
       tags: [Ticket Management]
       operationId: updateTicketType
-      summary: '[RENCANA] Ubah jenis tiket'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Parameter id merujuk ke jenis tiket; body dan otorisasi belum ditetapkan.
+      summary: Ubah jenis tiket (admin)
+      x-implementation-status: implemented
+      description: 'AKTIF. Parameter id adalah ID jenis tiket. Minimal satu field non-null. Field yang tidak dikirim atau null tidak diubah. Perubahan total_stock menyesuaikan available_stock sebesar selisih stok; stok baru tidak boleh di bawah jumlah tiket yang sudah dialokasikan. Nama dirapikan. Saat ini nama duplikat atau melampaui batas kolom 100 karakter menghasilkan 500 dari database.'
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTicketTypeInput'
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '200':
+          description: Jenis tiket berhasil diubah.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TicketType'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Jenis tiket tidak ditemukan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: ticket type not found}
+        '409':
+          description: Stok baru di bawah jumlah tiket yang sudah dialokasikan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: total stock below allocated tickets}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /bookings:
     post:
@@ -492,6 +552,43 @@ components:
       schema: {type: integer, format: int64, minimum: 1}
       example: 1
   schemas:
+    CreateTicketTypeInput:
+      type: object
+      required: [name, price, total_stock]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Tidak boleh hanya spasi; maksimal 100 karakter setelah dirapikan.
+          example: VIP
+        price: {type: integer, format: int64, minimum: 1, example: 150000}
+        total_stock: {type: integer, format: int32, minimum: 1, example: 100}
+    UpdateTicketTypeInput:
+      type: object
+      minProperties: 1
+      description: Minimal satu field non-null. Field null dianggap tidak dikirim.
+      properties:
+        name:
+          type: string
+          nullable: true
+          minLength: 1
+          description: Tidak boleh hanya spasi. Batas kolom database 100 karakter.
+        price: {type: integer, format: int64, minimum: 1, nullable: true}
+        total_stock: {type: integer, format: int32, minimum: 1, nullable: true}
+      example: {price: 175000, total_stock: 120}
+    TicketType:
+      type: object
+      required: [id, event_id, name, price, total_stock, available_stock, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64, example: 12}
+        event_id: {type: integer, format: int64, example: 7}
+        name: {type: string, example: VIP}
+        price: {type: integer, format: int64, example: 150000}
+        total_stock: {type: integer, format: int32, example: 100}
+        available_stock: {type: integer, format: int32, example: 80}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     RegisterInput:
       type: object
       required: [name, email, password]

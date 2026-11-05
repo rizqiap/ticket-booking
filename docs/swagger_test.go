@@ -8,6 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/SeladaKeju/ticket-booking/internal/auth"
+	"github.com/SeladaKeju/ticket-booking/internal/event"
+	"github.com/SeladaKeju/ticket-booking/internal/tickettype"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-yaml"
 )
@@ -33,6 +36,47 @@ func TestSwaggerRoutes(t *testing.T) {
 				t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+// Every implemented API operation must match a registered route in both directions.
+func TestImplementedContractRoutes(t *testing.T) {
+	content, err := files.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]any `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(content, &spec); err != nil {
+		t.Fatal(err)
+	}
+	implemented := func(path, method string) bool {
+		operation, ok := spec.Paths[path][method].(map[string]any)
+		return ok && operation["x-implementation-status"] == "implemented"
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := router.Group("/api/v1")
+	noop := func(c *gin.Context) { c.Next() }
+	auth.RegisterRoutes(api, auth.NewHandler(nil), noop)
+	event.RegisterRoutes(api, event.NewHandler(nil), noop, noop)
+	tickettype.RegisterRoutes(api, tickettype.NewHandler(nil), noop, noop)
+	routes := make(map[string]bool)
+	for _, route := range router.Routes() {
+		path := strings.ReplaceAll(strings.TrimPrefix(route.Path, "/api/v1"), ":id", "{id}")
+		method := strings.ToLower(route.Method)
+		routes[method+" "+path] = true
+		if !implemented(path, method) {
+			t.Errorf("registered route is not documented as implemented: %s %s", route.Method, path)
+		}
+	}
+	for path, operations := range spec.Paths {
+		for method := range operations {
+			if implemented(path, method) && !routes[method+" "+path] {
+				t.Errorf("implemented contract operation has no route: %s %s", method, path)
+			}
+		}
 	}
 }
 

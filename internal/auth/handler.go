@@ -135,11 +135,3 @@ func (h *Handler) Me(c *gin.Context) {
 		"data": user,
 	})
 }
-
-// AdminCheck confirms admin access.
-func (h *Handler) AdminCheck(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"message": "admin access granted",
-		"data":    nil,
-	})
-}

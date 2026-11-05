@@ -15,5 +15,4 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, authRequired gin.HandlerFun
 	protected.Use(authRequired)
 
 	protected.GET("/me", h.Me)
-	protected.GET("/admin-check", RequireRole("admin"), h.AdminCheck)
 }

@@ -66,7 +66,7 @@ Response:
 ```
 
 Use your configured port if you change `APP_PORT`.
-Authentication supports registration, login, profiles, and an admin access check.
+Authentication supports registration, login, and profiles.
 
 ## Swagger
 
@@ -78,7 +78,8 @@ The contract is maintained in [docs/openapi.yaml](docs/openapi.yaml) and embedde
 in the Go binary. Restart the API after changing it. All endpoints from
 [the requirements](docs/REQUIREMENT.MD) are listed; those marked `[RENCANA]` are not
 implemented and have no agreed request/response body yet. Active endpoints follow
-the current handlers. `/auth/admin-check` is also documented.
+the current handlers, including event publishing and ticket type listing, creation,
+and updates.
 
 To call a protected endpoint, login through Swagger, copy `data.access_token`,
 click **Authorize**, and paste the token without the `Bearer` prefix.
