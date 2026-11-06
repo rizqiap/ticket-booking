@@ -137,6 +137,17 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - `GET /bookings/{id}`
 - `POST /bookings/{id}/cancel`
 
+#### Create booking (implemented)
+- `POST /bookings` wajib login; user diambil dari JWT, bukan request body.
+- Header `Idempotency-Key` wajib, 8-128 byte setelah trim.
+- Body: `ticket_type_id` (ID positif), `quantity` (1-4 tiket per booking).
+- Event harus published dan belum dimulai. Harga dihitung dari harga tiket di database.
+- Booking baru berstatus pending, dengan `expires_at` 15 menit sejak dibuat.
+- Reservasi stok melalui conditional UPDATE dan insert booking dilakukan dalam satu transaksi untuk mencegah overselling.
+- Key unik per user mencegah booking ganda. Penggunaan ulang menghasilkan 409, tanpa mengembalikan booking awal; pengurangan stok dibatalkan bila insert gagal.
+- Respons: 201 booking baru, 400 input invalid, 401 unauthorized, 409 tiket/event/stok tidak tersedia atau key duplikat, 500 internal error.
+- Expiry worker, pembayaran, pembatalan, dan pelepasan stok belum termasuk implementasi create booking.
+
 ### 5. Payment Simulation
 - `POST /bookings/{id}/payments`
 - `GET /bookings/{id}/payments`

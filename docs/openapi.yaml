@@ -459,12 +459,49 @@ paths:
     post:
       tags: [Ticket Booking]
       operationId: createBooking
-      summary: '[RENCANA] Pesan tiket'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Body, penempatan idempotency key, otorisasi, dan response belum ditetapkan.
+      summary: Pesan tiket
+      x-implementation-status: implemented
+      description: 'AKTIF. Wajib login. Event harus published dan belum dimulai. Harga dihitung server. Booking pending berlaku 15 menit; stok direservasi dan booking disimpan dalam satu transaksi. Key unik per user mencegah booking ganda. Request ulang menghasilkan 409, tanpa mengembalikan booking awal. Worker expiry dan pelepasan stok belum diimplementasikan.'
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Key unik sepanjang 8-128 byte setelah trim. Penggunaan ulang ditolak. Batas byte diperiksa server; panjang string OpenAPI dihitung dalam karakter.
+          schema: {type: string, minLength: 1, maxLength: 128}
+          example: booking-20261106-001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBookingInput'
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '201':
+          description: Booking dibuat dan stok direservasi.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message: {type: string, example: booking created successfully}
+                  data:
+                    $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Tiket/event tidak tersedia, stok tidak cukup, atau idempotency key sudah digunakan. Retry juga dapat menghasilkan ticket unavailable jika stok sudah habis.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: ticket unavailable}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
     get:
       tags: [Ticket Booking]
       operationId: listBookings
@@ -552,6 +589,26 @@ components:
       schema: {type: integer, format: int64, minimum: 1}
       example: 1
   schemas:
+    CreateBookingInput:
+      type: object
+      required: [ticket_type_id, quantity]
+      properties:
+        ticket_type_id: {type: integer, format: int64, minimum: 1, example: 12}
+        quantity: {type: integer, format: int32, minimum: 1, maximum: 4, example: 2}
+    Booking:
+      type: object
+      required: [id, user_id, ticket_type_id, quantity, total_price, status, idempotency_key, expires_at, created_at, updated_at]
+      properties:
+        id: {type: integer, format: int64, example: 1}
+        user_id: {type: integer, format: int64, example: 1}
+        ticket_type_id: {type: integer, format: int64, example: 12}
+        quantity: {type: integer, format: int32, minimum: 1, maximum: 4, example: 2}
+        total_price: {type: integer, format: int64, minimum: 0, example: 300000}
+        status: {type: string, enum: [pending, confirmed, expired], example: pending}
+        idempotency_key: {type: string, example: booking-20261106-001}
+        expires_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     CreateTicketTypeInput:
       type: object
       required: [name, price, total_stock]

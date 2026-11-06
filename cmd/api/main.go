@@ -9,6 +9,7 @@ import (
 
 	"github.com/SeladaKeju/ticket-booking/docs"
 	"github.com/SeladaKeju/ticket-booking/internal/auth"
+	"github.com/SeladaKeju/ticket-booking/internal/booking"
 	"github.com/SeladaKeju/ticket-booking/internal/config"
 	"github.com/SeladaKeju/ticket-booking/internal/database"
 	"github.com/SeladaKeju/ticket-booking/internal/event"
@@ -64,9 +65,14 @@ func main() {
 	ticketTypeService := tickettype.NewService(ticketTypeRepo)
 	ticketTypeHandler := tickettype.NewHandler(ticketTypeService)
 
+	bookingRepo := booking.NewRepository(db)
+	bookingService := booking.NewService(bookingRepo)
+	bookingHandler := booking.NewHandler(bookingService)
+
 	// Register API routes
 	api := r.Group("/api/v1")
 	auth.RegisterRoutes(api, authHandler, authRequired)
+	booking.RegisterRoutes(api, bookingHandler, authRequired)
 
 	// Event routes
 	event.RegisterRoutes(

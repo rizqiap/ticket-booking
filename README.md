@@ -84,6 +84,32 @@ and updates.
 To call a protected endpoint, login through Swagger, copy `data.access_token`,
 click **Authorize**, and paste the token without the `Bearer` prefix.
 
+## Create Booking
+
+`POST /api/v1/bookings` requires a Bearer token and an `Idempotency-Key` header.
+The key must be 8-128 bytes after trimming leading and trailing whitespace.
+
+```http
+POST /api/v1/bookings
+Authorization: Bearer <access_token>
+Idempotency-Key: booking-001
+Content-Type: application/json
+
+{"ticket_type_id":12,"quantity":2}
+```
+
+The event must be published and not started. Quantity is 1-4; the server calculates
+the total price and reserves stock in the same transaction that creates the booking.
+A new booking returns 201 with `message` and `data`, status `pending`, and an
+`expires_at` 15 minutes in the future. Reusing a key for the same user returns 409
+without creating another booking or reserving stock again. Unavailable tickets,
+unpublished/started events, and insufficient stock also return 409.
+Expiration processing and releasing reserved stock are not implemented yet.
+
+Run booking unit tests with `go test ./internal/booking`. They cover service
+validation, handler responses, and error handling using a repository stub,
+without a database or HTTP server.
+
 ## Project Structure
 
 ```text

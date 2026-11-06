@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/SeladaKeju/ticket-booking/internal/auth"
+	"github.com/SeladaKeju/ticket-booking/internal/booking"
 	"github.com/SeladaKeju/ticket-booking/internal/event"
 	"github.com/SeladaKeju/ticket-booking/internal/tickettype"
 	"github.com/gin-gonic/gin"
@@ -62,6 +63,7 @@ func TestImplementedContractRoutes(t *testing.T) {
 	auth.RegisterRoutes(api, auth.NewHandler(nil), noop)
 	event.RegisterRoutes(api, event.NewHandler(nil), noop, noop)
 	tickettype.RegisterRoutes(api, tickettype.NewHandler(nil), noop, noop)
+	booking.RegisterRoutes(api, booking.NewHandler(nil), noop)
 	routes := make(map[string]bool)
 	for _, route := range router.Routes() {
 		path := strings.ReplaceAll(strings.TrimPrefix(route.Path, "/api/v1"), ":id", "{id}")
