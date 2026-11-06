@@ -13,7 +13,6 @@ func RegisterRoutes(
 
 	admin := events.Group("")
 	admin.Use(authRequired, adminOnly)
-
 	admin.POST("/:id/ticket-types", h.Create)
 
 	ticketTypes := rg.Group("/ticket-types")

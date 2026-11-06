@@ -9,16 +9,14 @@ func RegisterRoutes(
 	authRequired gin.HandlerFunc,
 	adminOnly gin.HandlerFunc,
 ) {
-	events := rg.Group("/events")
-
 	// Public routes
+	events := rg.Group("/events")
 	events.GET("", h.List)
 	events.GET("/:id", h.GetByID)
 
 	// Admin routes
 	admin := events.Group("")
 	admin.Use(authRequired, adminOnly)
-
 	admin.POST("", h.Create)
 	admin.PATCH("/:id", h.Update)
 	admin.PATCH("/:id/publish", h.Publish)
