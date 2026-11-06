@@ -124,6 +124,19 @@ go test -tags integration ./tests/integration -run TestCreateBookingConcurrency 
 The tests send 20 concurrent requests to verify limited stock cannot be oversold
 and a shared user/key creates only one booking with one stock reservation.
 
+## Booking History
+
+`GET /api/v1/bookings?page=1&limit=10` requires a Bearer token. It returns only the
+authenticated user's bookings, with all statuses, newest first (`created_at DESC`,
+then `id DESC`). Pagination matches event listing: page 1-100000, limit 1-100.
+
+```json
+{"data":[],"pagination":{"page":1,"limit":10}}
+```
+
+Non-empty `data` contains the same booking fields as create. The endpoint does not
+expire bookings or release stock; statuses reflect the stored database values.
+
 ## Project Structure
 
 ```text

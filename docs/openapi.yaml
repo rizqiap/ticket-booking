@@ -505,12 +505,48 @@ paths:
     get:
       tags: [Ticket Booking]
       operationId: listBookings
-      summary: '[RENCANA] Riwayat pemesanan'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Filter, pagination, otorisasi, dan response belum ditetapkan.
+      summary: Riwayat pemesanan pengguna
+      x-implementation-status: implemented
+      description: 'AKTIF. Wajib login. Hanya booking milik user dari JWT, termasuk semua status. Diurutkan berdasarkan created_at DESC lalu id DESC. Data kosong berupa []. Parameter user_id tidak mengubah pemilik riwayat. Expiry mengikuti status tersimpan; worker expiry belum tersedia.'
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100000, default: 1}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 100, default: 10}
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '200':
+          description: Satu halaman riwayat booking pengguna, tanpa total count.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, pagination]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Booking'
+                  pagination:
+                    type: object
+                    required: [page, limit]
+                    properties:
+                      page: {type: integer, example: 1}
+                      limit: {type: integer, example: 10}
+        '400':
+          description: Parameter pagination tidak valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid pagination parameters}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /bookings/{id}:
     parameters:

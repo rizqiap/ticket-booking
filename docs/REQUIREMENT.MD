@@ -148,7 +148,16 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - Respons: 201 booking baru/retry, 400 input invalid, 401 unauthorized, 409 tiket/event/stok tidak tersedia atau payload berbeda untuk key sama, 500 internal error.
 - Expiry worker, pembayaran, pembatalan, dan pelepasan stok belum termasuk implementasi create booking.
 
+#### Booking history (implemented)
+- `GET /bookings` wajib login; hanya booking milik user dari JWT.
+- Pagination: `page` default 1 (1-100000), `limit` default 10 (1-100).
+- Semua status disertakan, diurutkan dari `created_at` terbaru lalu ID terbesar.
+- Respons 200 berisi `data` array dan `pagination` (`page`, `limit`), tanpa total count.
+- Riwayat kosong menghasilkan `data: []`. Pagination invalid menghasilkan 400.
+- Status berasal dari database; listing tidak menjalankan expiry atau mengubah stok.
+
 ### 5. Payment Simulation
+
 - `POST /bookings/{id}/payments`
 - `GET /bookings/{id}/payments`
 

@@ -310,3 +310,53 @@ func concurrencyDatabase(t *testing.T) *pgxpool.Pool {
 	}
 	return pool
 }
+
+func TestBookingHistoryDatabase(t *testing.T) {
+	db := concurrencyDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if _, err := db.Exec(ctx, `
+		INSERT INTO bookings (
+			id, user_id, ticket_type_id, quantity, total_price, status,
+			idempotency_key, expires_at, created_at
+		) VALUES
+			(10, 1, 1, 1, 150000, 'pending', 'history-10', NOW(), NOW() - INTERVAL '2 days'),
+			(11, 1, 1, 1, 150000, 'confirmed', 'history-11', NOW(), NOW() - INTERVAL '1 day'),
+			(12, 1, 1, 1, 150000, 'expired', 'history-12', NOW(), NOW() - INTERVAL '1 day'),
+			(13, 2, 1, 1, 150000, 'pending', 'history-13', NOW(), NOW());
+	`); err != nil {
+		t.Fatal(err)
+	}
+	service := booking.NewService(booking.NewRepository(db))
+	statuses := map[int64]string{
+		10: "pending", 11: "confirmed", 12: "expired", 13: "pending",
+	}
+	for _, tt := range []struct {
+		name   string
+		userID int64
+		page   int
+		wantID []int64
+	}{
+		{"newest first with ID tie-break", 1, 1, []int64{12, 11}},
+		{"next page", 1, 2, []int64{10}},
+		{"other user sees own history", 2, 1, []int64{13}},
+		{"user without history", 3, 1, []int64{}},
+		{"page beyond history", 1, 3, []int64{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			bookings, err := service.List(ctx, tt.userID, tt.page, 2)
+			if err != nil || bookings == nil || len(bookings) != len(tt.wantID) {
+				t.Fatalf("history=%+v err=%v; want IDs %v", bookings, err, tt.wantID)
+			}
+			for n, b := range bookings {
+				if b.ID != tt.wantID[n] || b.UserID != tt.userID ||
+					b.Status != statuses[b.ID] || b.TicketTypeID != 1 ||
+					b.Quantity != 1 || b.TotalPrice != 150000 ||
+					b.IdempotencyKey != fmt.Sprintf("history-%d", b.ID) ||
+					b.CreatedAt.IsZero() || b.UpdatedAt.IsZero() || b.ExpiresAt.IsZero() {
+					t.Fatalf("incorrect history row: %+v", b)
+				}
+			}
+		})
+	}
+}

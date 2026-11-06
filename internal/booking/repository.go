@@ -28,6 +28,49 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) ListByUserID(
+	ctx context.Context,
+	userID int64,
+	limit, offset int,
+) ([]Booking, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, user_id, ticket_type_id, quantity, total_price, status,
+		       idempotency_key, expires_at, created_at, updated_at
+		FROM bookings
+		WHERE user_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2 OFFSET $3
+	`, userID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list booking history: %w", err)
+	}
+	defer rows.Close()
+
+	bookings := make([]Booking, 0)
+	for rows.Next() {
+		var b Booking
+		if err := rows.Scan(
+			&b.ID,
+			&b.UserID,
+			&b.TicketTypeID,
+			&b.Quantity,
+			&b.TotalPrice,
+			&b.Status,
+			&b.IdempotencyKey,
+			&b.ExpiresAt,
+			&b.CreatedAt,
+			&b.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan booking history: %w", err)
+		}
+		bookings = append(bookings, b)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate booking history: %w", err)
+	}
+	return bookings, nil
+}
+
 // Public method called by Service
 func (r *Repository) Create(
 	ctx context.Context,

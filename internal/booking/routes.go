@@ -6,4 +6,5 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, authRequired gin.HandlerFun
 	bookings := rg.Group("/bookings")
 	bookings.Use(authRequired)
 	bookings.POST("", h.Create)
+	bookings.GET("", h.List)
 }

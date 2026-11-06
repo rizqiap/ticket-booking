@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/SeladaKeju/ticket-booking/internal/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -206,5 +208,123 @@ func TestCreateHandlerErrorHandling(t *testing.T) {
 				t.Fatalf("unexpected response: %d %s", response.Code, response.Body)
 			}
 		})
+	}
+}
+
+func TestListHandler(t *testing.T) {
+	want := []Booking{{ID: 12, UserID: 7, Status: "confirmed"}}
+	for _, tt := range []struct {
+		name     string
+		query    string
+		userID   int64
+		bookings []Booking
+		repoErr  error
+		status   int
+		message  string
+		page     int
+		limit    int
+	}{
+		{
+			name: "defaults", userID: 7, bookings: want,
+			status: 200, page: 1, limit: 10,
+		},
+		{
+			name:  "pagination ignores supplied user ID",
+			query: "?page=2&limit=2&user_id=999", userID: 7, bookings: want,
+			status: 200, page: 2, limit: 2,
+		},
+		{
+			name: "empty history", userID: 7, bookings: []Booking{},
+			status: 200, page: 1, limit: 10,
+		},
+		{
+			name: "invalid page", query: "?page=0", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "non-numeric page", query: "?page=abc", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "page above limit", query: "?page=100001", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "invalid limit", query: "?limit=101", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "zero limit", query: "?limit=0", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "non-numeric limit", query: "?limit=abc", userID: 7,
+			status: 400, message: "invalid pagination parameters",
+		},
+		{
+			name: "missing identity", status: 401, message: "unauthorized",
+		},
+		{
+			name: "internal error hides details", userID: 7,
+			repoErr: errors.New("private database details"),
+			status:  500, message: "internal server error", page: 1, limit: 10,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			repo := repositoryStub{
+				listByUserID: func(
+					_ context.Context,
+					userID int64,
+					limit, offset int,
+				) ([]Booking, error) {
+					called = true
+					if userID != 7 || limit != tt.limit || offset != (tt.page-1)*tt.limit {
+						t.Fatal("handler used incorrect user or pagination")
+					}
+					return tt.bookings, tt.repoErr
+				},
+			}
+			c, response := bookingRequest("", "")
+			c.Set("user_id", tt.userID)
+			c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/bookings"+tt.query, nil)
+			NewHandler(NewService(repo)).List(c)
+			if response.Code != tt.status || called != (tt.status == 200 || tt.status == 500) {
+				t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
+			}
+			var body struct {
+				Data       []Booking `json:"data"`
+				Error      string    `json:"error"`
+				Pagination struct {
+					Page  int `json:"page"`
+					Limit int `json:"limit"`
+				} `json:"pagination"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error != tt.message {
+				t.Fatalf("unexpected error: %s", response.Body)
+			}
+			if tt.status == 200 {
+				if !reflect.DeepEqual(body.Data, tt.bookings) ||
+					body.Pagination.Page != tt.page || body.Pagination.Limit != tt.limit {
+					t.Fatalf("unexpected history response: %s", response.Body)
+				}
+			} else if body.Data != nil {
+				t.Fatalf("error response included booking data: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestListRouteRequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterRoutes(router.Group("/api/v1"), NewHandler(nil), auth.AuthMiddleware("test-secret"))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/bookings", nil))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("history without token returned %d", response.Code)
 	}
 }

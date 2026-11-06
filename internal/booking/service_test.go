@@ -3,17 +3,27 @@ package booking
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
 
 type repositoryStub struct {
-	create func(
+	listByUserID func(context.Context, int64, int, int) ([]Booking, error)
+	create       func(
 		context.Context,
 		int64,
 		CreateInput,
 		string,
 	) (*Booking, error)
+}
+
+func (r repositoryStub) ListByUserID(
+	ctx context.Context,
+	userID int64,
+	limit, offset int,
+) ([]Booking, error) {
+	return r.listByUserID(ctx, userID, limit, offset)
 }
 
 func (r repositoryStub) Create(
@@ -185,6 +195,56 @@ func TestMatchBooking(t *testing.T) {
 				(err == nil && got != existing) ||
 				(err != nil && got != nil) {
 				t.Fatalf("unexpected booking=%+v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestListBookingHistory(t *testing.T) {
+	dbErr := errors.New("database failure")
+	for _, tt := range []struct {
+		name       string
+		page       int
+		limit      int
+		wantOffset int
+		bookings   []Booking
+		repoErr    error
+	}{
+		{
+			name: "first page", page: 1, limit: 10, wantOffset: 0,
+			bookings: []Booking{{ID: 12, UserID: 7, Status: "pending"}},
+		},
+		{
+			name: "next page", page: 2, limit: 2, wantOffset: 2,
+			bookings: []Booking{{ID: 10, UserID: 7, Status: "expired"}},
+		},
+		{
+			name: "empty history", page: 1, limit: 10,
+			bookings: []Booking{},
+		},
+		{
+			name: "repository failure", page: 1, limit: 10,
+			repoErr: dbErr,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			repo := repositoryStub{
+				listByUserID: func(
+					gotCtx context.Context,
+					userID int64,
+					limit, offset int,
+				) ([]Booking, error) {
+					if gotCtx != ctx || userID != 7 ||
+						limit != tt.limit || offset != tt.wantOffset {
+						t.Fatal("incorrect history lookup arguments")
+					}
+					return tt.bookings, tt.repoErr
+				},
+			}
+			got, err := NewService(repo).List(ctx, 7, tt.page, tt.limit)
+			if !errors.Is(err, tt.repoErr) || !reflect.DeepEqual(got, tt.bookings) {
+				t.Fatalf("unexpected history=%+v err=%v", got, err)
 			}
 		})
 	}
