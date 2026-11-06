@@ -101,14 +101,28 @@ Content-Type: application/json
 The event must be published and not started. Quantity is 1-4; the server calculates
 the total price and reserves stock in the same transaction that creates the booking.
 A new booking returns 201 with `message` and `data`, status `pending`, and an
-`expires_at` 15 minutes in the future. Reusing a key for the same user returns 409
-without creating another booking or reserving stock again. Unavailable tickets,
+`expires_at` 10 minutes in the future. Reusing a key with the same ticket type and
+quantity for the same user returns 201 with the original booking, even after stock
+runs out. Its price, status, and expiry remain unchanged. Different booking data
+with the same key returns 409. Unavailable tickets for new bookings,
 unpublished/started events, and insufficient stock also return 409.
 Expiration processing and releasing reserved stock are not implemented yet.
 
 Run booking unit tests with `go test ./internal/booking`. They cover service
 validation, handler responses, and error handling using a repository stub,
 without a database or HTTP server.
+
+Concurrency tests use PostgreSQL and run separately from unit tests. The database
+user must be able to create schemas; each scenario creates and removes an isolated
+schema using the existing migrations.
+
+```powershell
+$env:TEST_DATABASE_URL = 'postgres://user:password@localhost:15432/test_db?sslmode=disable'
+go test -tags integration ./tests/integration -run TestCreateBookingConcurrency -count=1 -v
+```
+
+The tests send 20 concurrent requests to verify limited stock cannot be oversold
+and a shared user/key creates only one booking with one stock reservation.
 
 ## Project Structure
 

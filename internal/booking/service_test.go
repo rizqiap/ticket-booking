@@ -11,18 +11,18 @@ type repositoryStub struct {
 	create func(
 		context.Context,
 		int64,
-		string,
 		CreateInput,
+		string,
 	) (*Booking, error)
 }
 
 func (r repositoryStub) Create(
 	ctx context.Context,
 	userID int64,
-	key string,
 	input CreateInput,
+	key string,
 ) (*Booking, error) {
-	return r.create(ctx, userID, key, input)
+	return r.create(ctx, userID, input, key)
 }
 
 func TestCreateValidInput(t *testing.T) {
@@ -51,8 +51,8 @@ func TestCreateValidInput(t *testing.T) {
 				create: func(
 					gotCtx context.Context,
 					userID int64,
-					key string,
 					gotInput CreateInput,
+					key string,
 				) (*Booking, error) {
 					if gotCtx != ctx ||
 						userID != 7 ||
@@ -69,7 +69,7 @@ func TestCreateValidInput(t *testing.T) {
 				},
 			}
 
-			got, err := NewService(repo).Create(ctx, 7, tt.key, input)
+			got, err := NewService(repo).Create(ctx, 7, input, tt.key)
 			if err != nil || got != want {
 				t.Fatalf(
 					"got booking=%+v err=%v; want %+v",
@@ -106,8 +106,8 @@ func TestCreateInvalidInput(t *testing.T) {
 				create: func(
 					context.Context,
 					int64,
-					string,
 					CreateInput,
+					string,
 				) (*Booking, error) {
 					t.Fatal("repository must not be called for invalid input")
 					return nil, nil
@@ -117,8 +117,8 @@ func TestCreateInvalidInput(t *testing.T) {
 			booking, err := NewService(repo).Create(
 				context.Background(),
 				tt.userID,
-				tt.key,
 				tt.input,
+				tt.key,
 			)
 			if !errors.Is(err, ErrInvalidBooking) || booking != nil {
 				t.Fatalf(
@@ -137,8 +137,8 @@ func TestCreateRepositoryError(t *testing.T) {
 		create: func(
 			context.Context,
 			int64,
-			string,
 			CreateInput,
+			string,
 		) (*Booking, error) {
 			return nil, want
 		},
@@ -147,11 +147,11 @@ func TestCreateRepositoryError(t *testing.T) {
 	booking, err := NewService(repo).Create(
 		context.Background(),
 		7,
-		"booking-001",
 		CreateInput{
 			TicketTypeID: 12,
 			Quantity:     2,
 		},
+		"booking-001",
 	)
 	if !errors.Is(err, want) || booking != nil {
 		t.Fatalf(
@@ -159,5 +159,33 @@ func TestCreateRepositoryError(t *testing.T) {
 			booking,
 			err,
 		)
+	}
+}
+
+func TestMatchBooking(t *testing.T) {
+	existing := &Booking{
+		ID:           1,
+		TicketTypeID: 12,
+		Quantity:     2,
+		TotalPrice:   300000,
+		Status:       "expired",
+	}
+	for _, tt := range []struct {
+		name    string
+		input   CreateInput
+		wantErr error
+	}{
+		{"same request", CreateInput{12, 2}, nil},
+		{"different ticket", CreateInput{13, 2}, ErrDuplicateBooking},
+		{"different quantity", CreateInput{12, 3}, ErrDuplicateBooking},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := matchBooking(existing, tt.input)
+			if !errors.Is(err, tt.wantErr) ||
+				(err == nil && got != existing) ||
+				(err != nil && got != nil) {
+				t.Fatalf("unexpected booking=%+v err=%v", got, err)
+			}
+		})
 	}
 }

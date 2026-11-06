@@ -26,7 +26,12 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	// Use the authenticated user from middleware, never a user ID supplied in the body.
-	booking, err := h.service.Create(c.Request.Context(), c.GetInt64("user_id"), c.GetHeader("Idempotency-Key"), input)
+	booking, err := h.service.Create(
+		c.Request.Context(),
+		c.GetInt64("user_id"),
+		input,
+		c.GetHeader("Idempotency-Key"),
+	)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrInvalidBooking):

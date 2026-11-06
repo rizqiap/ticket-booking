@@ -9,7 +9,7 @@ import (
 var ErrInvalidBooking = errors.New("invalid booking data")
 
 type bookingRepository interface {
-	Create(context.Context, int64, string, CreateInput) (*Booking, error)
+	Create(context.Context, int64, CreateInput, string) (*Booking, error)
 }
 
 type Service struct {
@@ -20,10 +20,14 @@ func NewService(repo bookingRepository) *Service {
 	return &Service{repo: repo}
 }
 
-// Create validates the request before reserving stock.
-func (s *Service) Create(ctx context.Context, userID int64, key string, input CreateInput) (*Booking, error) {
+// Create validates input; the repository handles transactions and idempotency.
+func (s *Service) Create(
+	ctx context.Context,
+	userID int64,
+	input CreateInput,
+	key string,
+) (*Booking, error) {
 	key = strings.TrimSpace(key)
-	// Allow 1-4 tickets and an idempotency key of 8-128 bytes after trimming.
 	if userID <= 0 ||
 		input.TicketTypeID <= 0 ||
 		input.Quantity < 1 ||
@@ -32,10 +36,5 @@ func (s *Service) Create(ctx context.Context, userID int64, key string, input Cr
 		len(key) > 128 {
 		return nil, ErrInvalidBooking
 	}
-	return s.repo.Create(
-		ctx,
-		userID,
-		key,
-		input,
-	)
+	return s.repo.Create(ctx, userID, input, key)
 }

@@ -461,14 +461,14 @@ paths:
       operationId: createBooking
       summary: Pesan tiket
       x-implementation-status: implemented
-      description: 'AKTIF. Wajib login. Event harus published dan belum dimulai. Harga dihitung server. Booking pending berlaku 15 menit; stok direservasi dan booking disimpan dalam satu transaksi. Key unik per user mencegah booking ganda. Request ulang menghasilkan 409, tanpa mengembalikan booking awal. Worker expiry dan pelepasan stok belum diimplementasikan.'
+      description: 'AKTIF. Wajib login. Event harus published dan belum dimulai untuk booking baru. Harga dihitung server. Booking pending berlaku 10 menit; stok direservasi dan booking disimpan dalam satu transaksi. Key unik per user. Retry dengan ticket_type_id dan quantity sama mengembalikan booking awal tanpa mengubah harga, status, expiry, atau stok, termasuk saat stok habis/event tidak lagi tersedia. Payload berbeda menghasilkan 409. Worker expiry dan pelepasan stok belum diimplementasikan.'
       security:
         - bearerAuth: []
       parameters:
         - name: Idempotency-Key
           in: header
           required: true
-          description: Key unik sepanjang 8-128 byte setelah trim. Penggunaan ulang ditolak. Batas byte diperiksa server; panjang string OpenAPI dihitung dalam karakter.
+          description: Key unik sepanjang 8-128 byte setelah trim. Gunakan key sama hanya untuk retry payload yang sama. Batas byte diperiksa server; panjang string OpenAPI dihitung dalam karakter.
           schema: {type: string, minLength: 1, maxLength: 128}
           example: booking-20261106-001
       requestBody:
@@ -479,7 +479,7 @@ paths:
               $ref: '#/components/schemas/CreateBookingInput'
       responses:
         '201':
-          description: Booking dibuat dan stok direservasi.
+          description: Booking dibuat dan stok direservasi, atau booking awal dikembalikan pada retry. Keduanya memakai status 201 dan envelope message/data yang sama.
           content:
             application/json:
               schema:
@@ -494,7 +494,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '409':
-          description: Tiket/event tidak tersedia, stok tidak cukup, atau idempotency key sudah digunakan. Retry juga dapat menghasilkan ticket unavailable jika stok sudah habis.
+          description: Tiket/event tidak tersedia, stok tidak cukup, atau key sama digunakan dengan payload berbeda.
           content:
             application/json:
               schema:

@@ -142,10 +142,10 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - Header `Idempotency-Key` wajib, 8-128 byte setelah trim.
 - Body: `ticket_type_id` (ID positif), `quantity` (1-4 tiket per booking).
 - Event harus published dan belum dimulai. Harga dihitung dari harga tiket di database.
-- Booking baru berstatus pending, dengan `expires_at` 15 menit sejak dibuat.
+- Booking baru berstatus pending, dengan `expires_at` 10 menit sejak dibuat.
 - Reservasi stok melalui conditional UPDATE dan insert booking dilakukan dalam satu transaksi untuk mencegah overselling.
-- Key unik per user mencegah booking ganda. Penggunaan ulang menghasilkan 409, tanpa mengembalikan booking awal; pengurangan stok dibatalkan bila insert gagal.
-- Respons: 201 booking baru, 400 input invalid, 401 unauthorized, 409 tiket/event/stok tidak tersedia atau key duplikat, 500 internal error.
+- Key unik per user. Retry dengan ticket_type_id dan quantity sama mengembalikan booking awal tanpa mengubah harga, status, expiry, atau stok. Payload berbeda menghasilkan 409. Ini tetap berlaku saat stok habis atau event tidak lagi tersedia.
+- Respons: 201 booking baru/retry, 400 input invalid, 401 unauthorized, 409 tiket/event/stok tidak tersedia atau payload berbeda untuk key sama, 500 internal error.
 - Expiry worker, pembayaran, pembatalan, dan pelepasan stok belum termasuk implementasi create booking.
 
 ### 5. Payment Simulation

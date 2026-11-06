@@ -70,8 +70,8 @@ func TestCreateHandlerRequestValidation(t *testing.T) {
 				create: func(
 					context.Context,
 					int64,
-					string,
 					CreateInput,
+					string,
 				) (*Booking, error) {
 					t.Fatal("invalid request must not reach the repository")
 					return nil, nil
@@ -111,8 +111,8 @@ func TestCreateHandlerSuccessResponse(t *testing.T) {
 		create: func(
 			ctx context.Context,
 			userID int64,
-			key string,
 			input CreateInput,
+			key string,
 		) (*Booking, error) {
 			if ctx != c.Request.Context() ||
 				userID != 7 ||
@@ -168,8 +168,9 @@ func TestCreateHandlerErrorHandling(t *testing.T) {
 			name:    "duplicate booking",
 			err:     fmt.Errorf("create: %w", ErrDuplicateBooking),
 			status:  http.StatusConflict,
-			message: "duplicate booking request",
+			message: "idempotency key used for different request",
 		},
+
 		{
 			name:    "internal error hides details",
 			err:     errors.New("private database details"),
@@ -182,8 +183,8 @@ func TestCreateHandlerErrorHandling(t *testing.T) {
 				create: func(
 					context.Context,
 					int64,
-					string,
 					CreateInput,
+					string,
 				) (*Booking, error) {
 					return nil, tt.err
 				},
