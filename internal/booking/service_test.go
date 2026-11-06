@@ -3,12 +3,14 @@ package booking
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 )
 
 type repositoryStub struct {
+	getByID      func(context.Context, int64, int64) (*Booking, error)
 	listByUserID func(context.Context, int64, int, int) ([]Booking, error)
 	create       func(
 		context.Context,
@@ -16,6 +18,13 @@ type repositoryStub struct {
 		CreateInput,
 		string,
 	) (*Booking, error)
+}
+
+func (r repositoryStub) GetByID(
+	ctx context.Context,
+	userID, id int64,
+) (*Booking, error) {
+	return r.getByID(ctx, userID, id)
 }
 
 func (r repositoryStub) ListByUserID(
@@ -245,6 +254,36 @@ func TestListBookingHistory(t *testing.T) {
 			got, err := NewService(repo).List(ctx, 7, tt.page, tt.limit)
 			if !errors.Is(err, tt.repoErr) || !reflect.DeepEqual(got, tt.bookings) {
 				t.Fatalf("unexpected history=%+v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestGetBookingDetail(t *testing.T) {
+	want := &Booking{ID: 12, UserID: 7, Status: "pending"}
+	for _, repoErr := range []error{
+		nil,
+		errBookingNotFound,
+		errors.New("database failure"),
+	} {
+		t.Run(fmt.Sprint(repoErr), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			repo := repositoryStub{
+				getByID: func(gotCtx context.Context, userID, id int64) (*Booking, error) {
+					if gotCtx != ctx || userID != 7 || id != 12 {
+						t.Fatal("incorrect detail lookup arguments")
+					}
+					if repoErr != nil {
+						return nil, repoErr
+					}
+					return want, nil
+				},
+			}
+			got, err := NewService(repo).GetByID(ctx, 7, 12)
+			if !errors.Is(err, repoErr) ||
+				(err == nil && got != want) || (err != nil && got != nil) {
+				t.Fatalf("unexpected detail=%+v err=%v", got, err)
 			}
 		})
 	}

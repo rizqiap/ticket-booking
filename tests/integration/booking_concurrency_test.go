@@ -360,3 +360,52 @@ func TestBookingHistoryDatabase(t *testing.T) {
 		})
 	}
 }
+
+func TestBookingDetailDatabase(t *testing.T) {
+	db := concurrencyDatabase(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	service := booking.NewService(booking.NewRepository(db))
+	want, err := service.Create(
+		ctx, 1, booking.CreateInput{TicketTypeID: 1, Quantity: 2}, "booking-detail",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		name     string
+		userID   int64
+		id       int64
+		notFound bool
+	}{
+		{"owner receives full booking", 1, want.ID, false},
+		{"another user cannot read it", 2, want.ID, true},
+		{"user without history cannot read it", 3, want.ID, true},
+		{"missing booking", 1, 999, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := service.GetByID(ctx, tt.userID, tt.id)
+			if tt.notFound {
+				if got != nil || err == nil || err.Error() != "booking not found" {
+					t.Fatalf("detail=%+v err=%v; want booking not found", got, err)
+				}
+				return
+			}
+			if err != nil || got == nil || *got != *want {
+				t.Fatalf("detail=%+v err=%v; want %+v", got, err, want)
+			}
+		})
+	}
+
+	// Completed or expired bookings remain visible in the owner's detail view.
+	if _, err := db.Exec(ctx, `
+		UPDATE bookings SET status = 'expired' WHERE id = $1
+	`, want.ID); err != nil {
+		t.Fatal(err)
+	}
+	want.Status = "expired"
+	got, err := service.GetByID(ctx, 1, want.ID)
+	if err != nil || got == nil || *got != *want {
+		t.Fatalf("expired detail=%+v err=%v; want %+v", got, err, want)
+	}
+}

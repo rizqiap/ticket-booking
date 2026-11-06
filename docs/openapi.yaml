@@ -554,12 +554,40 @@ paths:
     get:
       tags: [Ticket Booking]
       operationId: getBooking
-      summary: '[RENCANA] Detail pemesanan'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Parameter id merujuk ke pemesanan; detail kontrak belum ditetapkan.
+      summary: Detail pemesanan pengguna
+      x-implementation-status: implemented
+      description: 'AKTIF. Wajib login. Parameter id adalah ID booking. Hanya pemilik booking dari JWT yang dapat mengaksesnya, termasuk user dengan role admin. Booking milik user lain dan ID tidak ditemukan sama-sama menghasilkan 404. Status mengikuti database; endpoint tidak menjalankan expiry.'
+      security:
+        - bearerAuth: []
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '200':
+          description: Detail booking milik user yang login.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Booking'
+        '400':
+          description: ID booking bukan bilangan bulat positif int64.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid booking id}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Booking tidak ada atau bukan milik user yang login.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: booking not found}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /bookings/{id}/cancel:
     parameters:

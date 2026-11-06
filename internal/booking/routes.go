@@ -7,4 +7,5 @@ func RegisterRoutes(rg *gin.RouterGroup, h *Handler, authRequired gin.HandlerFun
 	bookings.Use(authRequired)
 	bookings.POST("", h.Create)
 	bookings.GET("", h.List)
+	bookings.GET("/:id", h.GetByID)
 }

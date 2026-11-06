@@ -99,3 +99,30 @@ func (h *Handler) List(c *gin.Context) {
 		},
 	})
 }
+
+func (h *Handler) GetByID(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	if userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid booking id"})
+		return
+	}
+
+	booking, err := h.service.GetByID(c.Request.Context(), userID, id)
+	if err != nil {
+		if errors.Is(err, errBookingNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "booking not found"})
+			return
+		}
+		log.Printf("get booking detail: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": booking})
+}

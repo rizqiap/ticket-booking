@@ -156,6 +156,14 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - Riwayat kosong menghasilkan `data: []`. Pagination invalid menghasilkan 400.
 - Status berasal dari database; listing tidak menjalankan expiry atau mengubah stok.
 
+#### Booking detail (implemented)
+- `GET /bookings/{id}` wajib login, ID booking harus bilangan bulat positif int64.
+- Hanya pemilik dari JWT yang dapat melihat booking, termasuk bila role user adalah admin.
+- Respons 200 berisi `data` dengan field booking yang sama seperti create/history.
+- ID tidak ada atau booking milik user lain menghasilkan 404 dengan pesan `booking not found`.
+- ID invalid menghasilkan 400, tanpa login 401, kegagalan internal 500.
+- Detail membaca status tersimpan; tidak menjalankan expiry atau mengubah stok.
+
 ### 5. Payment Simulation
 
 - `POST /bookings/{id}/payments`

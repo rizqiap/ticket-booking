@@ -137,6 +137,14 @@ then `id DESC`). Pagination matches event listing: page 1-100000, limit 1-100.
 Non-empty `data` contains the same booking fields as create. The endpoint does not
 expire bookings or release stock; statuses reflect the stored database values.
 
+## Booking Detail
+
+`GET /api/v1/bookings/{id}` requires a Bearer token and returns 200 with
+`{"data": <booking>}`, using the same booking fields as create/history.
+Only the authenticated owner can read it. Both an unknown ID and another user's
+booking return 404 with `{"error":"booking not found"}`. Invalid IDs return 400.
+Reading a booking does not expire it or release reserved stock.
+
 ## Project Structure
 
 ```text

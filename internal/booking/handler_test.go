@@ -318,13 +318,104 @@ func TestListHandler(t *testing.T) {
 	}
 }
 
-func TestListRouteRequiresAuth(t *testing.T) {
+func TestBookingReadRoutesRequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	RegisterRoutes(router.Group("/api/v1"), NewHandler(nil), auth.AuthMiddleware("test-secret"))
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/bookings", nil))
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("history without token returned %d", response.Code)
+	for _, path := range []string{"/api/v1/bookings", "/api/v1/bookings/12"} {
+		t.Run(path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+			if response.Code != http.StatusUnauthorized {
+				t.Fatalf("booking read without token returned %d", response.Code)
+			}
+		})
+	}
+}
+
+func TestGetBookingDetailHandler(t *testing.T) {
+	want := &Booking{
+		ID: 12, UserID: 7, TicketTypeID: 1, Quantity: 2,
+		TotalPrice: 300000, Status: "pending", IdempotencyKey: "booking-001",
+	}
+	for _, tt := range []struct {
+		name    string
+		id      string
+		userID  int64
+		repoErr error
+		status  int
+		message string
+	}{
+		{
+			name: "detail ignores user ID from query", id: "12", userID: 7, status: 200,
+		},
+		{
+			name: "invalid ID", id: "abc", userID: 7,
+			status: 400, message: "invalid booking id",
+		},
+		{
+			name: "zero ID", id: "0", userID: 7,
+			status: 400, message: "invalid booking id",
+		},
+		{
+			name: "negative ID", id: "-1", userID: 7,
+			status: 400, message: "invalid booking id",
+		},
+		{
+			name: "overflow ID", id: "9223372036854775808", userID: 7,
+			status: 400, message: "invalid booking id",
+		},
+		{
+			name: "missing identity", id: "12", status: 401, message: "unauthorized",
+		},
+		{
+			name: "missing or other user's booking", id: "12", userID: 7,
+			repoErr: fmt.Errorf("lookup: %w", errBookingNotFound),
+			status:  404, message: "booking not found",
+		},
+		{
+			name: "internal error hides details", id: "12", userID: 7,
+			repoErr: errors.New("private database details"),
+			status:  500, message: "internal server error",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			repo := repositoryStub{
+				getByID: func(_ context.Context, userID, id int64) (*Booking, error) {
+					called = true
+					if userID != 7 || id != 12 {
+						t.Fatal("handler used incorrect user or booking ID")
+					}
+					if tt.repoErr != nil {
+						return nil, tt.repoErr
+					}
+					return want, nil
+				},
+			}
+			c, response := bookingRequest("", "")
+			c.Set("user_id", tt.userID)
+			c.Params = gin.Params{{Key: "id", Value: tt.id}}
+			c.Request = httptest.NewRequest(
+				http.MethodGet, "/api/v1/bookings/"+tt.id+"?user_id=999", nil,
+			)
+			NewHandler(NewService(repo)).GetByID(c)
+			wantCalled := tt.status == 200 || tt.status == 404 || tt.status == 500
+			if response.Code != tt.status || called != wantCalled {
+				t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
+			}
+			var body struct {
+				Data  *Booking `json:"data"`
+				Error string   `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error != tt.message ||
+				(tt.status == 200 && (body.Data == nil || *body.Data != *want)) ||
+				(tt.status != 200 && body.Data != nil) {
+				t.Fatalf("unexpected detail response: %s", response.Body)
+			}
+		})
 	}
 }

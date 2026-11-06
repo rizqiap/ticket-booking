@@ -11,6 +11,7 @@ var ErrInvalidBooking = errors.New("invalid booking data")
 type bookingRepository interface {
 	Create(context.Context, int64, CreateInput, string) (*Booking, error)
 	ListByUserID(context.Context, int64, int, int) ([]Booking, error)
+	GetByID(context.Context, int64, int64) (*Booking, error)
 }
 
 type Service struct {
@@ -47,4 +48,11 @@ func (s *Service) List(
 ) ([]Booking, error) {
 	offset := (page - 1) * limit
 	return s.repo.ListByUserID(ctx, userID, limit, offset)
+}
+
+func (s *Service) GetByID(
+	ctx context.Context,
+	userID, id int64,
+) (*Booking, error) {
+	return s.repo.GetByID(ctx, userID, id)
 }
