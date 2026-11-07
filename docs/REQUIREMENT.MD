@@ -146,7 +146,7 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - Reservasi stok melalui conditional UPDATE dan insert booking dilakukan dalam satu transaksi untuk mencegah overselling.
 - Key unik per user. Retry dengan ticket_type_id dan quantity sama mengembalikan booking awal tanpa mengubah harga, status, expiry, atau stok. Payload berbeda menghasilkan 409. Ini tetap berlaku saat stok habis atau event tidak lagi tersedia.
 - Respons: 201 booking baru/retry, 400 input invalid, 401 unauthorized, 409 tiket/event/stok tidak tersedia atau payload berbeda untuk key sama, 500 internal error.
-- Expiry worker, pembayaran, pembatalan, dan pelepasan stok belum termasuk implementasi create booking.
+- Expiry worker dan pembayaran belum tersedia. Pembatalan dan pengembalian stok tersedia melalui endpoint cancel.
 
 #### Booking history (implemented)
 - `GET /bookings` wajib login; hanya booking milik user dari JWT.
@@ -164,7 +164,17 @@ Membangun sistem pemesanan tiket event yang dapat menangani banyak request secar
 - ID invalid menghasilkan 400, tanpa login 401, kegagalan internal 500.
 - Detail membaca status tersimpan; tidak menjalankan expiry atau mengubah stok.
 
+#### Cancel booking (implemented)
+- `POST /bookings/{id}/cancel` wajib login, tanpa body, hanya pemilik booking.
+- Booking pending menjadi cancelled; stok kembali sebesar quantity dalam transaksi yang sama.
+- Booking cancelled tetap tersimpan dalam history. Retry menghasilkan 200 tanpa penambahan stok lagi.
+- Booking confirmed/expired menghasilkan 409; ID tidak ada atau milik user lain menghasilkan 404.
+- Respons 200 berisi `message: booking cancelled successfully` dan `data` booking.
+- Pending dapat dibatalkan meskipun expires_at lewat selama status tersimpan masih pending.
+- Migration 000007 menambahkan status cancelled; downgrade ditolak jika data cancelled masih ada.
+
 ### 5. Payment Simulation
+
 
 - `POST /bookings/{id}/payments`
 - `GET /bookings/{id}/payments`

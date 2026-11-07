@@ -419,3 +419,77 @@ func TestGetBookingDetailHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestCancelBookingHandler(t *testing.T) {
+	want := &Booking{ID: 12, UserID: 7, Quantity: 2, Status: "cancelled"}
+	for _, tt := range []struct {
+		name    string
+		id      string
+		userID  int64
+		err     error
+		status  int
+		message string
+	}{
+		{"success", "12", 7, nil, 200, ""},
+		{"invalid ID", "abc", 7, nil, 400, "invalid booking id"},
+		{"zero ID", "0", 7, nil, 400, "invalid booking id"},
+		{"missing identity", "12", 0, nil, 401, "unauthorized"},
+		{"missing or other owner", "12", 7, errBookingNotFound, 404, "booking not found"},
+		{"cannot cancel", "12", 7, ErrBookingCannotCancel, 409, "booking cannot be cancelled"},
+		{"internal error", "12", 7, errors.New("private details"), 500, "internal server error"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			repo := repositoryStub{
+				cancel: func(_ context.Context, userID, id int64) (*Booking, error) {
+					called = true
+					if userID != 7 || id != 12 {
+						t.Fatal("incorrect cancellation owner or ID")
+					}
+					if tt.err != nil {
+						return nil, tt.err
+					}
+					return want, nil
+				},
+			}
+			c, response := bookingRequest("", "")
+			c.Set("user_id", tt.userID)
+			c.Params = gin.Params{{Key: "id", Value: tt.id}}
+			c.Request = httptest.NewRequest(
+				http.MethodPost, "/api/v1/bookings/"+tt.id+"/cancel?user_id=999", nil,
+			)
+			NewHandler(NewService(repo)).Cancel(c)
+			wantCalled := tt.status == 200 || tt.status == 404 || tt.status == 409 || tt.status == 500
+			if response.Code != tt.status || called != wantCalled {
+				t.Fatalf("status=%d called=%v body=%s", response.Code, called, response.Body)
+			}
+			var body struct {
+				Data    *Booking `json:"data"`
+				Error   string   `json:"error"`
+				Message string   `json:"message"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Error != tt.message ||
+				(tt.status == 200 && (body.Data == nil || *body.Data != *want ||
+					body.Message != "booking cancelled successfully")) ||
+				(tt.status != 200 && body.Data != nil) {
+				t.Fatalf("unexpected cancellation response: %s", response.Body)
+			}
+		})
+	}
+}
+
+func TestCancelRouteRequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	RegisterRoutes(router.Group("/api/v1"), NewHandler(nil), auth.AuthMiddleware("test-secret"))
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(
+		http.MethodPost, "/api/v1/bookings/12/cancel", nil,
+	))
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("cancellation without token returned %d", response.Code)
+	}
+}

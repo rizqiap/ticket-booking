@@ -10,6 +10,7 @@ import (
 )
 
 type repositoryStub struct {
+	cancel       func(context.Context, int64, int64) (*Booking, error)
 	getByID      func(context.Context, int64, int64) (*Booking, error)
 	listByUserID func(context.Context, int64, int, int) ([]Booking, error)
 	create       func(
@@ -18,6 +19,13 @@ type repositoryStub struct {
 		CreateInput,
 		string,
 	) (*Booking, error)
+}
+
+func (r repositoryStub) Cancel(
+	ctx context.Context,
+	userID, id int64,
+) (*Booking, error) {
+	return r.cancel(ctx, userID, id)
 }
 
 func (r repositoryStub) GetByID(
@@ -284,6 +292,34 @@ func TestGetBookingDetail(t *testing.T) {
 			if !errors.Is(err, repoErr) ||
 				(err == nil && got != want) || (err != nil && got != nil) {
 				t.Fatalf("unexpected detail=%+v err=%v", got, err)
+			}
+		})
+	}
+}
+
+func TestCancelBooking(t *testing.T) {
+	want := &Booking{ID: 12, UserID: 7, Status: "cancelled"}
+	for _, repoErr := range []error{
+		nil, errBookingNotFound, ErrBookingCannotCancel, errors.New("database failure"),
+	} {
+		t.Run(fmt.Sprint(repoErr), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			repo := repositoryStub{
+				cancel: func(gotCtx context.Context, userID, id int64) (*Booking, error) {
+					if gotCtx != ctx || userID != 7 || id != 12 {
+						t.Fatal("incorrect cancellation arguments")
+					}
+					if repoErr != nil {
+						return nil, repoErr
+					}
+					return want, nil
+				},
+			}
+			got, err := NewService(repo).Cancel(ctx, 7, 12)
+			if !errors.Is(err, repoErr) ||
+				(err == nil && got != want) || (err != nil && got != nil) {
+				t.Fatalf("unexpected cancellation=%+v err=%v", got, err)
 			}
 		})
 	}

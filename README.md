@@ -53,6 +53,18 @@ Requires Go 1.25 or newer.
    go run ./cmd/api
    ```
 
+## CI
+
+GitHub Actions runs on every push and pull request: formatting, `go vet`, build,
+unit tests, and integration tests. Tests run with the race detector enabled.
+CI uses the Go version from `go.mod` and a temporary PostgreSQL 17 service.
+Integration tests apply their migrations inside isolated schemas; no `.env` or
+repository secrets are required. Results appear in the repository's Actions tab.
+
+Ticket type service unit tests live in `internal/tickettype/service_test.go`.
+Database tests live in `tests/integration` and require the `integration` build
+tag and `TEST_DATABASE_URL`, including the ticket type listing test.
+
 ## Health Check
 
 ```sh
@@ -106,7 +118,7 @@ quantity for the same user returns 201 with the original booking, even after sto
 runs out. Its price, status, and expiry remain unchanged. Different booking data
 with the same key returns 409. Unavailable tickets for new bookings,
 unpublished/started events, and insufficient stock also return 409.
-Expiration processing and releasing reserved stock are not implemented yet.
+Automatic expiration and stock release on expiry are not implemented yet.
 
 Run booking unit tests with `go test ./internal/booking`. They cover service
 validation, handler responses, and error handling using a repository stub,
@@ -121,8 +133,11 @@ $env:TEST_DATABASE_URL = 'postgres://user:password@localhost:15432/test_db?sslmo
 go test -tags integration ./tests/integration -run TestCreateBookingConcurrency -count=1 -v
 ```
 
-The tests send 20 concurrent requests to verify limited stock cannot be oversold
-and a shared user/key creates only one booking with one stock reservation.
+`booking_test.go` groups booking integration tests by operation. Its concurrency
+tests send 20 concurrent requests per scenario to verify
+limited stock cannot be oversold, a shared user/key creates only one booking with
+one stock reservation, and simultaneous cancellations restore stock only once.
+Shared setup helpers at the bottom create an isolated database and service for each scenario.
 
 ## Booking History
 
@@ -145,7 +160,18 @@ Only the authenticated owner can read it. Both an unknown ID and another user's
 booking return 404 with `{"error":"booking not found"}`. Invalid IDs return 400.
 Reading a booking does not expire it or release reserved stock.
 
+## Cancel Booking
+
+Apply migration `000007_add_cancelled_booking_status.up.sql` before using cancellation.
+`POST /api/v1/bookings/{id}/cancel` requires a Bearer token and no body. Only the owner
+can cancel a pending booking. The response is 200 with `message` and the booking in
+`data`; its status is `cancelled`. History is preserved and stock is restored once.
+Repeating cancellation returns the same booking without restoring stock again.
+Confirmed/expired bookings return 409; unknown IDs and other users' bookings return 404.
+The down migration refuses to remove the cancelled status while cancelled bookings exist.
+
 ## Project Structure
+
 
 ```text
 cmd/api/          API entry point

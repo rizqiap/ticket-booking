@@ -461,7 +461,7 @@ paths:
       operationId: createBooking
       summary: Pesan tiket
       x-implementation-status: implemented
-      description: 'AKTIF. Wajib login. Event harus published dan belum dimulai untuk booking baru. Harga dihitung server. Booking pending berlaku 10 menit; stok direservasi dan booking disimpan dalam satu transaksi. Key unik per user. Retry dengan ticket_type_id dan quantity sama mengembalikan booking awal tanpa mengubah harga, status, expiry, atau stok, termasuk saat stok habis/event tidak lagi tersedia. Payload berbeda menghasilkan 409. Worker expiry dan pelepasan stok belum diimplementasikan.'
+      description: 'AKTIF. Wajib login. Event harus published dan belum dimulai untuk booking baru. Harga dihitung server. Booking pending berlaku 10 menit; stok direservasi dan booking disimpan dalam satu transaksi. Key unik per user. Retry dengan ticket_type_id dan quantity sama mengembalikan booking awal tanpa mengubah harga, status, expiry, atau stok, termasuk saat stok habis/event tidak lagi tersedia. Payload berbeda menghasilkan 409. Worker expiry dan pelepasan stok otomatis saat expiry belum diimplementasikan.'
       security:
         - bearerAuth: []
       parameters:
@@ -595,12 +595,48 @@ paths:
     post:
       tags: [Ticket Booking]
       operationId: cancelBooking
-      summary: '[RENCANA] Batalkan pemesanan'
-      x-implementation-status: planned
-      description: Belum diimplementasikan. Body, otorisasi, response, dan pemetaan status pembatalan belum ditetapkan.
+      summary: Batalkan pemesanan
+      x-implementation-status: implemented
+      description: 'AKTIF. Wajib login, tanpa body. Hanya pemilik dapat membatalkan booking pending. Status menjadi cancelled dan stok dikembalikan dalam satu transaksi. Booking tetap tersimpan dalam history. Retry pada booking cancelled menghasilkan 200 tanpa mengembalikan stok lagi. Booking confirmed/expired menghasilkan 409. Status pending dapat dibatalkan meskipun expires_at lewat; expiry worker belum tersedia.'
+      security:
+        - bearerAuth: []
       responses:
-        default:
-          $ref: '#/components/responses/Planned'
+        '200':
+          description: Booking dibatalkan atau sudah cancelled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, data]
+                properties:
+                  message: {type: string, example: booking cancelled successfully}
+                  data:
+                    $ref: '#/components/schemas/Booking'
+        '400':
+          description: ID booking tidak valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: invalid booking id}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Booking tidak ada atau milik user lain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: booking not found}
+        '409':
+          description: Booking confirmed atau expired tidak dapat dibatalkan.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example: {error: booking cannot be cancelled}
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /bookings/{id}/payments:
     parameters:
@@ -668,7 +704,7 @@ components:
         ticket_type_id: {type: integer, format: int64, example: 12}
         quantity: {type: integer, format: int32, minimum: 1, maximum: 4, example: 2}
         total_price: {type: integer, format: int64, minimum: 0, example: 300000}
-        status: {type: string, enum: [pending, confirmed, expired], example: pending}
+        status: {type: string, enum: [pending, confirmed, expired, cancelled], example: pending}
         idempotency_key: {type: string, example: booking-20261106-001}
         expires_at: {type: string, format: date-time}
         created_at: {type: string, format: date-time}
