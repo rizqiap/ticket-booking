@@ -10,9 +10,10 @@ import (
 
 // Config holds application settings.
 type Config struct {
-	AppPort   int
-	DBUrl     string
-	JWTSecret string
+	AppPort           int
+	DBUrl             string
+	JWTSecret         string
+	MidtransServerKey string `env:"MIDTRANS_SERVER_KEY,required"`
 }
 
 // Load reads and validates environment settings.
