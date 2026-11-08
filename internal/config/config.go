@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -13,7 +14,7 @@ type Config struct {
 	AppPort           int
 	DBUrl             string
 	JWTSecret         string
-	MidtransServerKey string `env:"MIDTRANS_SERVER_KEY,required"`
+	MidtransServerKey string
 }
 
 // Load reads and validates environment settings.
@@ -41,6 +42,7 @@ func Load() (*Config, error) {
 	// Read environment variables
 	databaseURL := os.Getenv("DATABASE_URL")
 	jwtSecret := os.Getenv("JWT_SECRET")
+	midtransServerKey := strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY"))
 
 	// Validate required variables
 	if databaseURL == "" {
@@ -50,12 +52,16 @@ func Load() (*Config, error) {
 	if jwtSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET is required")
 	}
+	if midtransServerKey == "" {
+		return nil, fmt.Errorf("MIDTRANS_SERVER_KEY is required")
+	}
 
 	// Initialize configuration
 	cfg := &Config{
-		AppPort:   appPort,
-		DBUrl:     databaseURL,
-		JWTSecret: jwtSecret,
+		AppPort:           appPort,
+		DBUrl:             databaseURL,
+		JWTSecret:         jwtSecret,
+		MidtransServerKey: midtransServerKey,
 	}
 
 	return cfg, nil
