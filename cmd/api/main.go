@@ -33,6 +33,7 @@ func main() {
 	// Initialize the Midtrans gateway.
 	midtransGateway, err := payment.NewMidtransGateway(
 		cfg.MidtransServerKey,
+		cfg.MidtransSignatureKey,
 	)
 	if err != nil {
 		log.Fatal(err)

@@ -8,9 +8,16 @@ func RegisterRoutes(
 	h *Handler,
 	authRequired gin.HandlerFunc,
 ) {
+	// Customer endpoint: requires JWT.
 	rg.POST(
 		"/bookings/:id/pay",
 		authRequired,
 		h.Create,
+	)
+
+	// Midtrans webhook: uses signature verification.
+	rg.POST(
+		"/payments/webhook",
+		h.Webhook,
 	)
 }

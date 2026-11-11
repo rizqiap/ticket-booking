@@ -2,6 +2,9 @@ package payment
 
 import (
 	"context"
+	"crypto/sha512"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -156,4 +159,114 @@ func (r *Repository) SaveSnap(
 	}
 
 	return nil
+}
+
+func (g *MidtransGateway) VerifySignature(
+	n Notification,
+) bool {
+	// Signature must be valid SHA-512 hex.
+	provided, err := hex.DecodeString(n.SignatureKey)
+	if err != nil {
+		return false
+	}
+
+	// Midtrans signature formula.
+	payload := n.OrderID +
+		n.StatusCode +
+		n.GrossAmount +
+		g.signatureKey
+
+	expected := sha512.Sum512([]byte(payload))
+
+	// Constant-time comparison.
+	return subtle.ConstantTimeCompare(
+		provided,
+		expected[:],
+	) == 1
+}
+
+func (r *Repository) SaveNotification(
+	ctx context.Context,
+	n Notification,
+	grossAmount int64,
+) (bool, error) {
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf(
+			"begin notification tx: %w", err,
+		)
+	}
+
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(
+			context.Background(), 5*time.Second,
+		)
+		defer cancel()
+		_ = tx.Rollback(cleanupCtx)
+	}()
+
+	// 1. Find our payment by Midtrans order ID.
+	var paymentID, expectedAmount int64
+
+	err = tx.QueryRow(ctx, `
+        SELECT id, amount
+        FROM payments
+        WHERE midtrans_order_id = $1
+        FOR UPDATE
+    `, n.OrderID).Scan(
+		&paymentID,
+		&expectedAmount,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, ErrPaymentNotFound
+	}
+
+	if err != nil {
+		return false, fmt.Errorf(
+			"lookup payment: %w", err,
+		)
+	}
+
+	// 2. Verify amount against our database.
+	if expectedAmount != grossAmount {
+		return false, ErrAmountMismatch
+	}
+
+	// 3. Store notification once.
+	tag, err := tx.Exec(ctx, `
+        INSERT INTO payment_notifications (
+            payment_id,
+            transaction_id,
+            transaction_status,
+            status_code,
+            fraud_status
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT ON CONSTRAINT
+            payment_notification_unique
+        DO NOTHING
+    `,
+		paymentID,
+		n.TransactionID,
+		n.TransactionStatus,
+		n.StatusCode,
+		n.FraudStatus,
+	)
+
+	if err != nil {
+		return false, fmt.Errorf(
+			"insert notification: %w", err,
+		)
+	}
+
+	// 4. Commit transaction.
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf(
+			"commit notification: %w", err,
+		)
+	}
+
+	return tag.RowsAffected() == 1, nil
 }

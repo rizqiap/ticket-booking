@@ -35,6 +35,8 @@ Requires Go 1.25 or newer.
    | `APP_PORT` | HTTP port, between 1 and 65535 | `8080` |
    | `DATABASE_URL` | PostgreSQL connection URL | Required |
    | `JWT_SECRET` | Secret for signing JWTs | Required |
+   | `MIDTRANS_SERVER_KEY` | Sandbox Server Key for Midtrans API requests | Required |
+   | `MIDTRANS_SIGNATURE_KEY` | Signature Secret Key for notification verification | Required |
 
    Replace the example password and JWT secret with your own values.
    System environment variables take priority over `.env`.

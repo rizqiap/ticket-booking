@@ -13,6 +13,10 @@ var (
 	ErrPaymentPreparing    = errors.New("payment is being prepared")
 	ErrPaymentState        = errors.New("invalid payment state")
 	ErrProviderUnavailable = errors.New("payment provider unavailable")
+	ErrInvalidNotification = errors.New("invalid payment notification")
+	ErrInvalidSignature    = errors.New("invalid midtrans signature")
+	ErrPaymentNotFound     = errors.New("payment not found")
+	ErrAmountMismatch      = errors.New("payment amount mismatch")
 )
 
 // Payment holds payment data and its associated Snap session.
@@ -31,4 +35,15 @@ type Payment struct {
 type SnapResult struct {
 	Token       string
 	RedirectURL string
+}
+
+type Notification struct {
+	OrderID           string `json:"order_id"`
+	TransactionID     string `json:"transaction_id"`
+	TransactionStatus string `json:"transaction_status"`
+	StatusCode        string `json:"status_code"`
+	GrossAmount       string `json:"gross_amount"`
+	FraudStatus       string `json:"fraud_status"`
+	Currency          string `json:"currency"`
+	SignatureKey      string `json:"signature_key"`
 }

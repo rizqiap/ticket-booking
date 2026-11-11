@@ -12,17 +12,24 @@ import (
 
 // MidtransGateway creates Snap transactions through the Midtrans client.
 type MidtransGateway struct {
-	client *snap.Client
+	client       *snap.Client
+	signatureKey string
 }
 
-// NewMidtransGateway creates a sandbox gateway with the server key.
+// NewMidtransGateway uses separate API and notification signing credentials.
 func NewMidtransGateway(
 	serverKey string,
+	signatureKey string,
 ) (*MidtransGateway, error) {
+	serverKey = strings.TrimSpace(serverKey)
+	signatureKey = strings.TrimSpace(signatureKey)
 	if strings.TrimSpace(serverKey) == "" {
 		return nil, errors.New(
 			"midtrans server key is required",
 		)
+	}
+	if signatureKey == "" {
+		return nil, errors.New("midtrans signature key is required")
 	}
 
 	client := &snap.Client{}
@@ -33,7 +40,8 @@ func NewMidtransGateway(
 	)
 
 	return &MidtransGateway{
-		client: client,
+		client:       client,
+		signatureKey: signatureKey,
 	}, nil
 }
 

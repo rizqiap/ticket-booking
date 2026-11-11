@@ -11,10 +11,11 @@ import (
 
 // Config holds application settings.
 type Config struct {
-	AppPort           int
-	DBUrl             string
-	JWTSecret         string
-	MidtransServerKey string
+	AppPort              int
+	DBUrl                string
+	JWTSecret            string
+	MidtransServerKey    string
+	MidtransSignatureKey string
 }
 
 // Load reads and validates environment settings.
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 	databaseURL := os.Getenv("DATABASE_URL")
 	jwtSecret := os.Getenv("JWT_SECRET")
 	midtransServerKey := strings.TrimSpace(os.Getenv("MIDTRANS_SERVER_KEY"))
+	midtransSignatureKey := strings.TrimSpace(os.Getenv("MIDTRANS_SIGNATURE_KEY"))
 
 	// Validate required variables
 	if databaseURL == "" {
@@ -55,13 +57,17 @@ func Load() (*Config, error) {
 	if midtransServerKey == "" {
 		return nil, fmt.Errorf("MIDTRANS_SERVER_KEY is required")
 	}
+	if midtransSignatureKey == "" {
+		return nil, fmt.Errorf("MIDTRANS_SIGNATURE_KEY is required")
+	}
 
 	// Initialize configuration
 	cfg := &Config{
-		AppPort:           appPort,
-		DBUrl:             databaseURL,
-		JWTSecret:         jwtSecret,
-		MidtransServerKey: midtransServerKey,
+		AppPort:              appPort,
+		DBUrl:                databaseURL,
+		JWTSecret:            jwtSecret,
+		MidtransServerKey:    midtransServerKey,
+		MidtransSignatureKey: midtransSignatureKey,
 	}
 
 	return cfg, nil

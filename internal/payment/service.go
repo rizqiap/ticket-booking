@@ -2,6 +2,8 @@ package payment
 
 import (
 	"context"
+	"math/big"
+	"strings"
 	"time"
 )
 
@@ -17,6 +19,12 @@ type PaymentRepository interface {
 		paymentID int64,
 		token, redirectURL string,
 	) error
+
+	SaveNotification(
+		ctx context.Context,
+		n Notification,
+		grossAmount int64,
+	) (bool, error)
 }
 
 // PaymentGateway defines transaction creation with the payment provider.
@@ -26,6 +34,8 @@ type PaymentGateway interface {
 		amount int64,
 		bookingCreatedAt time.Time,
 	) (SnapResult, error)
+
+	VerifySignature(n Notification) bool
 }
 
 // Service handles payment business logic.
@@ -97,4 +107,52 @@ func (s *Service) Create(
 	p.RedirectURL = snapResult.RedirectURL
 
 	return p, true, nil
+}
+
+func (s *Service) HandleNotification(
+	ctx context.Context,
+	n Notification,
+) (bool, error) {
+
+	// 1. Validate required fields.
+	if n.OrderID == "" ||
+		n.TransactionID == "" ||
+		n.TransactionStatus == "" ||
+		n.StatusCode == "" ||
+		n.GrossAmount == "" ||
+		n.SignatureKey == "" {
+		return false, ErrInvalidNotification
+	}
+
+	// 2. Verify signature first.
+	if !s.gateway.VerifySignature(n) {
+		return false, ErrInvalidSignature
+	}
+
+	// 3. Check currency when present.
+	if n.Currency != "" &&
+		!strings.EqualFold(n.Currency, "IDR") {
+		return false, ErrAmountMismatch
+	}
+
+	// 4. Parse money without floating-point rounding.
+	amount, ok := new(big.Rat).SetString(
+		n.GrossAmount,
+	)
+
+	if !ok ||
+		amount.Sign() <= 0 ||
+		!amount.IsInt() ||
+		!amount.Num().IsInt64() {
+		return false, ErrInvalidNotification
+	}
+
+	grossAmount := amount.Num().Int64()
+
+	// 5. Persist the verified notification.
+	return s.repo.SaveNotification(
+		ctx,
+		n,
+		grossAmount,
+	)
 }

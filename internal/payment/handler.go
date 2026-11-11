@@ -16,6 +16,11 @@ type PaymentService interface {
 		ctx context.Context,
 		bookingID, userID int64,
 	) (*Payment, bool, error)
+
+	HandleNotification(
+		ctx context.Context,
+		n Notification,
+	) (bool, error)
 }
 
 // Handler handles payment requests and responses.
@@ -111,5 +116,68 @@ func (h *Handler) Create(c *gin.Context) {
 			"status":      p.Status,
 			"payment_url": p.RedirectURL,
 		},
+	})
+}
+
+func (h *Handler) Webhook(c *gin.Context) {
+	var n Notification
+
+	// Limit request body to 64 KB.
+	c.Request.Body = http.MaxBytesReader(
+		c.Writer,
+		c.Request.Body,
+		64<<10,
+	)
+
+	// 1. Parse JSON notification.
+	if err := c.ShouldBindJSON(&n); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid notification body",
+		})
+		return
+	}
+
+	// 2. Validate and save via Service.
+	inserted, err := h.service.HandleNotification(
+		c.Request.Context(),
+		n,
+	)
+
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrInvalidNotification):
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "invalid notification",
+			})
+
+		case errors.Is(err, ErrInvalidSignature):
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid signature",
+			})
+
+		case errors.Is(err, ErrPaymentNotFound):
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "payment not found",
+			})
+
+		case errors.Is(err, ErrAmountMismatch):
+			c.JSON(http.StatusUnprocessableEntity, gin.H{
+				"error": "payment amount mismatch",
+			})
+
+		default:
+			log.Printf("payment webhook error: %v", err)
+
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"error": "unable to process notification",
+			})
+		}
+		return
+	}
+
+	// 3. Acknowledge after database commit.
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "accepted",
+		"duplicate": !inserted,
 	})
 }
