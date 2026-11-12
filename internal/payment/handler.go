@@ -137,7 +137,7 @@ func (h *Handler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// 2. Validate and save via Service.
+	// 2. Validate, save, and confirm payment via Service.
 	inserted, err := h.service.HandleNotification(
 		c.Request.Context(),
 		n,

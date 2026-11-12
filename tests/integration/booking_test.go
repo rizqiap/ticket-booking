@@ -4,6 +4,8 @@ package integration_test
 
 import (
 	"context"
+	"crypto/sha512"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/SeladaKeju/ticket-booking/internal/booking"
+	"github.com/SeladaKeju/ticket-booking/internal/payment"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -540,4 +543,217 @@ func bookingDatabase(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	return pool
+}
+
+// Reuse the existing isolated PostgreSQL fixture for payment confirmation tests.
+func newPaymentConfirmationTest(t *testing.T) (context.Context, *pgxpool.Pool, *payment.Service, payment.Notification, int64) {
+	t.Helper()
+	ctx, db, bookings := newBookingTest(t)
+	for _, name := range []string{"000005_create_payments_table.up.sql", "000008_add_midtrans_to_payments.up.sql", "000009_create_payment_notifications.up.sql"} {
+		sql, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(ctx, string(sql)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := bookings.Create(ctx, 1, booking.CreateInput{TicketTypeID: 1, Quantity: 2}, "confirmation-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := payment.NewRepository(db)
+	p, _, err := repo.Reserve(ctx, b.ID, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := payment.NewMidtransGateway("test-api-key", "test-signing-key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := payment.Notification{OrderID: p.MidtransOrderID, TransactionID: "transaction", TransactionStatus: "settlement", StatusCode: "200", GrossAmount: "300000.00", FraudStatus: "accept", Currency: "IDR"}
+	digest := sha512.Sum512([]byte(n.OrderID + n.StatusCode + n.GrossAmount + "test-signing-key"))
+	n.SignatureKey = hex.EncodeToString(digest[:])
+	return ctx, db, payment.NewService(repo, gateway), n, b.ID
+}
+
+func assertConfirmationState(t *testing.T, ctx context.Context, db *pgxpool.Pool, wantPayment, wantBooking string, wantStock int) {
+	t.Helper()
+	var p, b string
+	var stock int
+	var paid bool
+	if err := db.QueryRow(ctx, `SELECT p.status, b.status, tt.available_stock, p.paid_at IS NOT NULL
+        FROM payments p JOIN bookings b ON b.id = p.booking_id JOIN ticket_types tt ON tt.id = b.ticket_type_id`).Scan(&p, &b, &stock, &paid); err != nil {
+		t.Fatal(err)
+	}
+	if p != wantPayment || b != wantBooking || stock != wantStock || paid != (wantPayment == "success") {
+		t.Fatalf("got payment=%s booking=%s stock=%d paid=%v", p, b, stock, paid)
+	}
+}
+
+func TestPaymentConfirmationDatabase(t *testing.T) {
+	for _, tt := range []struct {
+		status, fraud, p, b string
+		stock               int
+		processed           bool
+	}{
+		{"settlement", "accept", "success", "confirmed", 3, true},
+		{"capture", "accept", "success", "confirmed", 3, true},
+		{"capture", "challenge", "pending", "pending", 3, false},
+		{"pending", "accept", "pending", "pending", 3, false},
+		{"deny", "deny", "failed", "pending", 3, true},
+		{"cancel", "", "failed", "cancelled", 5, true},
+		{"expire", "", "failed", "expired", 5, true},
+		{"failure", "", "failed", "cancelled", 5, true},
+		{"refund", "accept", "pending", "pending", 3, false},
+	} {
+		t.Run(tt.status+tt.fraud, func(t *testing.T) {
+			ctx, db, service, n, _ := newPaymentConfirmationTest(t)
+			n.TransactionStatus, n.FraudStatus = tt.status, tt.fraud
+			if inserted, err := service.HandleNotification(ctx, n); err != nil || !inserted {
+				t.Fatalf("inserted=%v err=%v", inserted, err)
+			}
+			if inserted, err := service.HandleNotification(ctx, n); err != nil || inserted {
+				t.Fatalf("duplicate inserted=%v err=%v", inserted, err)
+			}
+			assertConfirmationState(t, ctx, db, tt.p, tt.b, tt.stock)
+			var count int
+			var processed bool
+			if err := db.QueryRow(ctx, `SELECT COUNT(*), bool_and(processed_at IS NOT NULL) FROM payment_notifications`).Scan(&count, &processed); err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 || processed != tt.processed {
+				t.Fatalf("count=%d processed=%v", count, processed)
+			}
+		})
+	}
+}
+
+func TestPaymentConfirmationRollbackAndRetry(t *testing.T) {
+	for _, stockFailure := range []bool{false, true} {
+		t.Run(fmt.Sprint(stockFailure), func(t *testing.T) {
+			ctx, db, service, n, _ := newPaymentConfirmationTest(t)
+			constraint := `ALTER TABLE bookings ADD CONSTRAINT confirmation_test CHECK (status <> 'confirmed')`
+			wantErr, target, p, b, stock := "confirm booking:", "bookings", "success", "confirmed", 3
+			if stockFailure {
+				n.TransactionStatus = "expire"
+				constraint = `ALTER TABLE ticket_types ADD CONSTRAINT confirmation_test CHECK (available_stock <= 3)`
+				wantErr, target, p, b, stock = "restore confirmation stock:", "ticket_types", "failed", "expired", 5
+			}
+			if _, err := db.Exec(ctx, constraint); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.HandleNotification(ctx, n); err == nil || !strings.Contains(err.Error(), wantErr) {
+				t.Fatalf("expected %s, got %v", wantErr, err)
+			}
+			assertConfirmationState(t, ctx, db, "pending", "pending", 3)
+			var count int
+			if err := db.QueryRow(ctx, `SELECT COUNT(*) FROM payment_notifications WHERE processed_at IS NULL`).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			if count != 1 {
+				t.Fatal("failed confirmation must retain the unprocessed notification")
+			}
+			if _, err := db.Exec(ctx, `ALTER TABLE `+target+` DROP CONSTRAINT confirmation_test`); err != nil {
+				t.Fatal(err)
+			}
+			if inserted, err := service.HandleNotification(ctx, n); err != nil || inserted {
+				t.Fatalf("retry inserted=%v err=%v", inserted, err)
+			}
+			assertConfirmationState(t, ctx, db, p, b, stock)
+		})
+	}
+}
+
+func TestPaymentConfirmationReplayAndLateFailure(t *testing.T) {
+	ctx, db, service, n, _ := newPaymentConfirmationTest(t)
+	// Receipt saved by 9C must still be confirmable by its existing notification ID.
+	id, _, err := payment.NewRepository(db).SaveNotification(ctx, n, 300000)
+	if err != nil || id <= 0 {
+		t.Fatalf("id=%d err=%v", id, err)
+	}
+	if inserted, err := service.HandleNotification(ctx, n); err != nil || inserted {
+		t.Fatalf("replay inserted=%v err=%v", inserted, err)
+	}
+	var paidAt time.Time
+	if err := db.QueryRow(ctx, `SELECT paid_at FROM payments`).Scan(&paidAt); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"pending", "expire", "deny", "settlement"} {
+		n.TransactionStatus = status
+		if _, err := service.HandleNotification(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	assertConfirmationState(t, ctx, db, "success", "confirmed", 3)
+	var finalPaidAt time.Time
+	if err := db.QueryRow(ctx, `SELECT paid_at FROM payments`).Scan(&finalPaidAt); err != nil {
+		t.Fatal(err)
+	}
+	if !finalPaidAt.Equal(paidAt) {
+		t.Fatal("replay changed paid_at")
+	}
+}
+
+func TestPaymentConfirmationRacesCancellation(t *testing.T) {
+	ctx, db, service, n, bookingID := newPaymentConfirmationTest(t)
+	start := make(chan struct{})
+	results := make(chan error, 6)
+	for i := 0; i < 5; i++ {
+		go func() { <-start; _, err := service.HandleNotification(ctx, n); results <- err }()
+	}
+	go func() {
+		<-start
+		_, err := booking.NewService(booking.NewRepository(db)).Cancel(ctx, 1, bookingID)
+		if errors.Is(err, booking.ErrBookingCannotCancel) {
+			err = nil
+		}
+		results <- err
+	}()
+	close(start)
+	for i := 0; i < 6; i++ {
+		if err := <-results; err != nil {
+			t.Error(err)
+		}
+	}
+	var status string
+	if err := db.QueryRow(ctx, `SELECT status FROM bookings WHERE id = $1`, bookingID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	switch status {
+	case "confirmed":
+		assertConfirmationState(t, ctx, db, "success", "confirmed", 3)
+	case "cancelled":
+		assertConfirmationState(t, ctx, db, "success", "cancelled", 5)
+	default:
+		t.Fatalf("unexpected booking status: %s", status)
+	}
+}
+
+func TestDeniedPaymentRetainsStockUntilFinalOutcome(t *testing.T) {
+	for _, tt := range []struct {
+		status, payment, booking string
+		stock                    int
+	}{
+		{"settlement", "success", "confirmed", 3},
+		{"expire", "failed", "expired", 5},
+		{"cancel", "failed", "cancelled", 5},
+	} {
+		t.Run(tt.status, func(t *testing.T) {
+			ctx, db, service, n, _ := newPaymentConfirmationTest(t)
+			n.TransactionStatus = "deny"
+			if _, err := service.HandleNotification(ctx, n); err != nil {
+				t.Fatal(err)
+			}
+			assertConfirmationState(t, ctx, db, "failed", "pending", 3)
+			n.TransactionStatus = tt.status
+			if _, err := service.HandleNotification(ctx, n); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.HandleNotification(ctx, n); err != nil {
+				t.Fatal(err)
+			}
+			assertConfirmationState(t, ctx, db, tt.payment, tt.booking, tt.stock)
+		})
+	}
 }

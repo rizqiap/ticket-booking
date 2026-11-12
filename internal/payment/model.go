@@ -19,12 +19,29 @@ var (
 	ErrAmountMismatch      = errors.New("payment amount mismatch")
 )
 
+type PaymentStatus string
+
+const (
+	PaymentPending PaymentStatus = "pending"
+	PaymentSuccess PaymentStatus = "success"
+	PaymentFailed  PaymentStatus = "failed"
+)
+
+type BookingStatus string
+
+const (
+	BookingPending   BookingStatus = "pending"
+	BookingConfirmed BookingStatus = "confirmed"
+	BookingCancelled BookingStatus = "cancelled"
+	BookingExpired   BookingStatus = "expired"
+)
+
 // Payment holds payment data and its associated Snap session.
 type Payment struct {
 	ID               int64
 	BookingID        int64
 	Amount           int64
-	Status           string
+	Status           PaymentStatus
 	MidtransOrderID  string
 	SnapToken        string
 	RedirectURL      string

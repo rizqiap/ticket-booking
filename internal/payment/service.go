@@ -24,7 +24,14 @@ type PaymentRepository interface {
 		ctx context.Context,
 		n Notification,
 		grossAmount int64,
-	) (bool, error)
+	) (int64, bool, error)
+
+	ConfirmNotification(
+		ctx context.Context,
+		notificationID int64,
+		paymentStatus PaymentStatus,
+		bookingStatus BookingStatus,
+	) error
 }
 
 // PaymentGateway defines transaction creation with the payment provider.
@@ -150,9 +157,64 @@ func (s *Service) HandleNotification(
 	grossAmount := amount.Num().Int64()
 
 	// 5. Persist the verified notification.
-	return s.repo.SaveNotification(
+	notificationID, inserted, err := s.repo.SaveNotification(
 		ctx,
 		n,
 		grossAmount,
 	)
+	if err != nil {
+		return false, err
+	}
+
+	// 6. Map Midtrans status to local payment and booking statuses.
+	paymentStatus, bookingStatus := mapMidtransStatus(
+		n.TransactionStatus,
+		n.FraudStatus,
+	)
+	if paymentStatus == PaymentSuccess && n.StatusCode != "200" {
+		return inserted, nil
+	}
+
+	// 7. Apply the mapped statuses using the saved notification ID.
+	if paymentStatus != PaymentPending {
+		err = s.repo.ConfirmNotification(
+			ctx,
+			notificationID,
+			paymentStatus,
+			bookingStatus,
+		)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return inserted, nil
+}
+
+func mapMidtransStatus(
+	transactionStatus string,
+	fraudStatus string,
+) (PaymentStatus, BookingStatus) {
+	switch transactionStatus {
+	case "settlement":
+		if fraudStatus == "" || fraudStatus == "accept" {
+			return PaymentSuccess, BookingConfirmed
+		}
+
+	case "capture":
+		if fraudStatus == "accept" {
+			return PaymentSuccess, BookingConfirmed
+		}
+
+	case "expire":
+		return PaymentFailed, BookingExpired
+
+	case "cancel", "failure":
+		return PaymentFailed, BookingCancelled
+
+	case "deny":
+		return PaymentFailed, BookingPending
+	}
+
+	return PaymentPending, BookingPending
 }

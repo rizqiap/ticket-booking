@@ -1,6 +1,9 @@
 package payment
 
 import (
+	"crypto/sha512"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -90,4 +93,28 @@ func (g *MidtransGateway) CreateTransaction(
 		Token:       response.Token,
 		RedirectURL: response.RedirectURL,
 	}, nil
+}
+
+func (g *MidtransGateway) VerifySignature(
+	n Notification,
+) bool {
+	// Signature must be valid SHA-512 hex.
+	provided, err := hex.DecodeString(n.SignatureKey)
+	if err != nil {
+		return false
+	}
+
+	// Midtrans signature formula.
+	payload := n.OrderID +
+		n.StatusCode +
+		n.GrossAmount +
+		g.signatureKey
+
+	expected := sha512.Sum512([]byte(payload))
+
+	// Constant-time comparison.
+	return subtle.ConstantTimeCompare(
+		provided,
+		expected[:],
+	) == 1
 }
